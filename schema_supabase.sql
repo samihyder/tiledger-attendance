@@ -93,24 +93,6 @@ CREATE INDEX IF NOT EXISTS idx_attendance_employee_date
 CREATE INDEX IF NOT EXISTS idx_attendance_synced
     ON attendance_logs(synced) WHERE synced = 0;
 
--- Daily attendance pushed to ERP (from sync)
-CREATE TABLE IF NOT EXISTS attendance_daily (
-    id               BIGSERIAL PRIMARY KEY,
-    employee_code    TEXT NOT NULL,
-    full_name        TEXT NOT NULL,
-    department       TEXT,
-    designation      TEXT,
-    date             TEXT NOT NULL,
-    punch_in         TEXT,
-    punch_out        TEXT,
-    minutes_late     INTEGER NOT NULL DEFAULT 0,
-    deduction_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
-    punch_source     TEXT,
-    override_reason  TEXT,
-    synced_at        TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
-    UNIQUE (employee_code, date)
-);
-
 -- Sync log
 CREATE TABLE IF NOT EXISTS sync_log (
     id             BIGSERIAL PRIMARY KEY,
