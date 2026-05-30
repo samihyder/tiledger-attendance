@@ -1,9 +1,6 @@
-# Vercel / cloud deployment dependencies
-# Heavy native packages (face_recognition, opencv, dlib) are NOT included —
-# they exceed Vercel's size limits and require physical hardware anyway.
-# For local deployment with biometric hardware use requirements-local.txt
+# Vercel / cloud deployment
+# numpy and Pillow are NOT included — face recognition is auto-mocked on Vercel
+# (no camera hardware). For local punch station use requirements-local.txt
 
 flask>=3.0.3
 psycopg2-binary>=2.9.9
-numpy>=1.24.0
-Pillow>=10.0.0

@@ -26,10 +26,21 @@ import json
 from io import BytesIO
 from abc import ABC, abstractmethod
 
-import numpy as np
-from PIL import Image
-
 from config import Config
+
+# numpy and Pillow are only needed when face recognition runs locally.
+# On Vercel (FACE_MOCK_MODE=True) these are never imported.
+if not Config.FACE_MOCK_MODE:
+    try:
+        import numpy as np
+        from PIL import Image
+    except ImportError:
+        pass  # will fall through to mock mode
+else:
+    # Provide stubs so type annotations in this file don't crash at parse time
+    import types as _types
+    np  = _types.ModuleType('numpy')
+    Image = None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
