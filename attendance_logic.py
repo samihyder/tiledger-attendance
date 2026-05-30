@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Core attendance business logic — late calculation, punch processing, roster enforcement.
 """

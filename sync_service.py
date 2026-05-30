@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Sync service — push daily attendance records (punch in/out + deduction) to ERP.
 

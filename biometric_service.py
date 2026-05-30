@@ -16,6 +16,8 @@ ZKFinger SDK notes:
     ZKFP_DBFree, ZKFP_GetImageQuality.
 """
 
+from __future__ import annotations
+
 import ctypes
 import os
 import sys
