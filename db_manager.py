@@ -94,6 +94,8 @@ def db():
         import psycopg2.extras
         pgconn  = psycopg2.connect(_DATABASE_URL,
                                    cursor_factory=psycopg2.extras.RealDictCursor)
+        # Isolate all attendance tables in their own schema — no collision with ERP's public schema
+        pgconn.cursor().execute('SET search_path TO attendance, public')
         wrapper = _PGConn(pgconn)
         try:
             yield wrapper
