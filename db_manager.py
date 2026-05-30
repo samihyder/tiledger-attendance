@@ -47,16 +47,19 @@ class _PGConn:
         adapted   = self._REPLACE(sql)
         is_insert = adapted.strip().upper().startswith('INSERT')
 
+        # Append RETURNING id to every INSERT so callers can read lastrowid.
+        # All tables in schema_supabase.sql have a BIGINT GENERATED id column.
+        if is_insert and 'RETURNING' not in adapted.upper():
+            adapted = adapted.rstrip('; \n') + ' RETURNING id'
+
         cur = self._conn.cursor()
         cur.execute(adapted, params or None)
         proxy = _PGCursor(cur)
 
         if is_insert:
             try:
-                cur2 = self._conn.cursor()
-                cur2.execute('SELECT lastval()')
-                row = cur2.fetchone()
-                proxy.lastrowid = row['lastval'] if row else None
+                row = cur.fetchone()
+                proxy.lastrowid = row['id'] if row else None
             except Exception:
                 proxy.lastrowid = None
 
