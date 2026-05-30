@@ -20,6 +20,8 @@ Anti-spoofing checks:
 Match threshold: Euclidean distance < 0.55 (adjustable in config.py).
 """
 
+from __future__ import annotations  # keeps np.ndarray in type hints as strings — never evaluated at import
+
 import os
 import base64
 import json
