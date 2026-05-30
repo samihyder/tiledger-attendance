@@ -1,28 +1,26 @@
 """
-WSGI entry point for Vercel deployment.
+Vercel entry point — exposes `app` at module level (required by @vercel/python).
 
-Environment variables required on Vercel:
-  DATABASE_URL        — Supabase connection pooler URL
-                        postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
-  SECRET_KEY          — Flask session secret (any long random string)
-  OVERRIDE_PASSWORD   — Super admin override password
-  APP_PREFIX          — URL mount point, set to /attendance
-  VERCEL              — Automatically set by Vercel (detects cloud environment)
+Environment variables (set in Vercel project settings):
+  DATABASE_URL         Supabase pooler URL (port 6543, Transaction mode)
+  SECRET_KEY           Flask session secret
+  OVERRIDE_PASSWORD    Super admin override password
+  APP_PREFIX           /attendance
+  SESSION_COOKIE_PATH  /attendance
+  VERCEL               Set automatically by Vercel runtime
 """
 
 import os
 from app import create_app
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+from werkzeug.exceptions import NotFound
 
-flask_app = create_app()
-flask_app.wsgi_app = ProxyFix(flask_app.wsgi_app, x_for=1, x_proto=1, x_prefix=1)
+_flask = create_app()
+_flask.wsgi_app = ProxyFix(_flask.wsgi_app, x_for=1, x_proto=1, x_prefix=1)
 
-# Mount under APP_PREFIX (e.g. /attendance) when set.
-# DispatcherMiddleware sets SCRIPT_NAME so url_for() generates correct prefixed URLs.
-prefix = os.environ.get('APP_PREFIX', '').rstrip('/')
-if prefix:
-    from werkzeug.middleware.dispatcher import DispatcherMiddleware
-    from werkzeug.exceptions import NotFound
-    app = DispatcherMiddleware(NotFound(), {prefix: flask_app})
-else:
-    app = flask_app
+# Mount under APP_PREFIX so url_for() generates /attendance/... URLs.
+# Ternary keeps `app` as a single unconditional top-level assignment —
+# Vercel requires this to detect the entry point.
+_prefix = os.environ.get('APP_PREFIX', '').rstrip('/')
+app = DispatcherMiddleware(NotFound(), {_prefix: _flask}) if _prefix else _flask
