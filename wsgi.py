@@ -23,4 +23,15 @@ _flask.wsgi_app = ProxyFix(_flask.wsgi_app, x_for=1, x_proto=1, x_prefix=1)
 # Ternary keeps `app` as a single unconditional top-level assignment —
 # Vercel requires this to detect the entry point.
 _prefix = os.environ.get('APP_PREFIX', '').rstrip('/')
-app = DispatcherMiddleware(NotFound(), {_prefix: _flask}) if _prefix else _flask
+
+if _prefix:
+    from werkzeug.wrappers import Response as _Response
+
+    def _root_redirect(environ, start_response):
+        """Redirect bare domain hits to the attendance prefix."""
+        res = _Response(status=302, headers={'Location': _prefix + '/'})
+        return res(environ, start_response)
+
+    app = DispatcherMiddleware(_root_redirect, {_prefix: _flask})
+else:
+    app = _flask
