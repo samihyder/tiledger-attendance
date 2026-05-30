@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if edit else 'New' }} Employee{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4">
+  <a href="{{ url_for('employees.list_employees') }}" class="btn btn-sm btn-outline-secondary me-3">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h4 class="fw-bold mb-0">{{ 'Edit Employee' if edit else 'Register New Employee' }}</h4>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <form method="POST" id="emp-form">
+
+      <!-- ── Personal Info ── -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-0 pt-3 pb-2">
+          <h6 class="fw-bold mb-0"><i class="bi bi-person me-2 text-primary"></i>Personal Information</h6>
+        </div>
+        <div class="card-body">
+          {% if not edit %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Employee Code <span class="text-danger">*</span></label>
+            <input type="text" name="employee_code" class="form-control"
+                   value="{{ employee.get('employee_code', '') }}"
+                   placeholder="e.g. EMP-001" required maxlength="20">
+          </div>
+          {% endif %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Full Name <span class="text-danger">*</span></label>
+            <input type="text" name="full_name" class="form-control"
+                   value="{{ employee.get('full_name', '') }}" required maxlength="120">
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Department</label>
+              <input type="text" name="department" class="form-control"
+                     value="{{ employee.get('department', '') }}" maxlength="80">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Designation</label>
+              <input type="text" name="designation" class="form-control"
+                     value="{{ employee.get('designation', '') }}" maxlength="80">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Phone</label>
+              <input type="tel" name="phone" class="form-control"
+                     value="{{ employee.get('phone', '') }}" maxlength="30">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Email</label>
+              <input type="email" name="email" class="form-control"
+                     value="{{ employee.get('email', '') }}" maxlength="120">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-0">
+              <label class="form-label fw-semibold">Joining Date</label>
+              <input type="date" name="joining_date" class="form-control"
+                     value="{{ employee.get('joining_date', '') }}">
+            </div>
+            {% if edit %}
+            <div class="col-md-6 mb-0">
+              <label class="form-label fw-semibold">Status</label>
+              <select name="active" class="form-select">
+                <option value="1" {% if employee.get('active', 1) %}selected{% endif %}>Active</option>
+                <option value="0" {% if not employee.get('active', 1) %}selected{% endif %}>Inactive</option>
+              </select>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Salary & Schedule ── -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-0 pt-3 pb-2">
+          <h6 class="fw-bold mb-0"><i class="bi bi-cash-stack me-2 text-success"></i>Salary &amp; Schedule</h6>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Monthly Salary (PKR)</label>
+              <div class="input-group">
+                <span class="input-group-text">PKR</span>
+                <input type="number" name="monthly_salary" id="monthly-salary" class="form-control"
+                       value="{{ employee.get('monthly_salary', 0) or '' }}"
+                       min="0" step="500" placeholder="e.g. 30000"
+                       oninput="recalculateRate()">
+              </div>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Weekly Off Day</label>
+              <select name="weekly_off_day" class="form-select">
+                {% set days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] %}
+                {% for i, d in enumerate(days) %}
+                  <option value="{{ i }}"
+                    {% if employee.get('weekly_off_day', 6) | int == i %}selected{% endif %}>
+                    {{ d }}
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Employee's designated weekly off day.</div>
+            </div>
+          </div>
+
+          <!-- Shift info reminder -->
+          <div class="alert alert-info py-2 small d-flex align-items-center mb-3">
+            <i class="bi bi-clock me-2"></i>
+            Standard shift: <strong class="mx-1">9 hours/day</strong> ·
+            Working days: <strong class="mx-1">6 days/week</strong> ·
+            Monthly working minutes: <strong class="ms-1">26 × 540 = 14,040 min</strong>
+          </div>
+
+          <!-- Deduction rate section -->
+          <div class="border rounded-3 p-3 bg-light">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div>
+                <div class="fw-semibold">Late Deduction Rate</div>
+                <div class="text-muted small">Auto-calculated from salary. Check the box to set manually.</div>
+              </div>
+              <div class="form-check form-switch ms-3">
+                <input class="form-check-input" type="checkbox" role="switch"
+                       name="deduction_rate_override" id="override-check"
+                       {% if employee.get('deduction_rate_override', 0) %}checked{% endif %}
+                       onchange="toggleOverride()">
+                <label class="form-check-label small fw-semibold" for="override-check">
+                  Manual override
+                </label>
+              </div>
+            </div>
+
+            <div class="row align-items-center">
+              <div class="col-md-5">
+                <div class="input-group">
+                  <span class="input-group-text">PKR</span>
+                  <input type="number" name="late_deduction_per_minute" id="deduction-rate"
+                         class="form-control fw-semibold"
+                         value="{{ employee.get('late_deduction_per_minute', 0) or 0 }}"
+                         min="0" step="0.01"
+                         {% if not employee.get('deduction_rate_override', 0) %}readonly{% endif %}>
+                  <span class="input-group-text">per minute late</span>
+                </div>
+              </div>
+              <div class="col-md-7">
+                <div id="rate-preview" class="text-muted small ps-2"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary fw-semibold px-4">
+          {{ 'Save Changes' if edit else 'Register & Enroll Biometrics' }}
+        </button>
+        <a href="{{ url_for('employees.list_employees') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+// Make enumerate available by precomputing in Jinja
+// (we already pass it via template filter - but enumerate is not a Jinja global)
+// It's used above inline — no JS needed for that part.
+
+const WORKING_MIN_PER_MONTH = 26 * 9 * 60;   // 14,040
+
+function recalculateRate() {
+  const override = document.getElementById('override-check').checked;
+  if (override) return;  // Don't auto-update when manually set
+
+  const salary = parseFloat(document.getElementById('monthly-salary').value) || 0;
+  const rate   = salary > 0 ? (salary / WORKING_MIN_PER_MONTH) : 0;
+  document.getElementById('deduction-rate').value = rate.toFixed(4);
+  updatePreview(salary, rate);
+}
+
+function toggleOverride() {
+  const override = document.getElementById('override-check').checked;
+  const rateField = document.getElementById('deduction-rate');
+  rateField.readOnly = !override;
+  if (!override) {
+    // Snap back to auto value
+    recalculateRate();
+  }
+  rateField.classList.toggle('bg-warning-subtle', override);
+}
+
+function updatePreview(salary, rate) {
+  const preview = document.getElementById('rate-preview');
+  if (!salary || salary <= 0) {
+    preview.textContent = 'Enter salary to auto-calculate';
+    return;
+  }
+  const exampleLate = 15;
+  const deduction = (rate * exampleLate).toFixed(0);
+  preview.innerHTML =
+    `<i class="bi bi-calculator me-1"></i>` +
+    `PKR ${salary.toLocaleString()} ÷ 14,040 min = <strong>PKR ${rate.toFixed(4)}/min</strong>` +
+    `<span class="ms-3 text-danger">e.g. 15 min late = PKR ${deduction} deducted</span>`;
+}
+
+// Init on page load
+window.addEventListener('DOMContentLoaded', () => {
+  const salary   = parseFloat(document.getElementById('monthly-salary').value) || 0;
+  const rate     = parseFloat(document.getElementById('deduction-rate').value) || 0;
+  const override = document.getElementById('override-check').checked;
+  if (override) {
+    document.getElementById('deduction-rate').classList.add('bg-warning-subtle');
+  }
+  updatePreview(salary, rate);
+  if (!override && salary > 0 && rate === 0) recalculateRate();
+});
+</script>
+{% endblock %}

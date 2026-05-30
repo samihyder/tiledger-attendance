@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+{% block title %}Sync to ERP{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="fw-bold mb-0"><i class="bi bi-cloud-upload me-2 text-primary"></i>Sync to ERP</h4>
+  {% if role == 'super_admin' %}
+  <a href="{{ url_for('sync.sync_settings') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-gear me-1"></i>ERP Settings
+  </a>
+  {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+
+  <!-- Sync trigger card -->
+  <div class="col-md-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center p-4">
+        <div class="display-4 fw-bold {% if unsynced_count > 0 %}text-warning{% else %}text-success{% endif %} mb-1">
+          {{ unsynced_count }}
+        </div>
+        <div class="text-muted mb-3">Daily Records Pending Sync</div>
+
+        {% if role == 'manager' and window_status %}
+          {% if window_status.allowed %}
+            <div class="alert alert-success py-2 small mb-3">
+              <i class="bi bi-clock-fill me-1"></i>
+              Sync window open: <strong>{{ window_status.window }}</strong>
+            </div>
+          {% else %}
+            <div class="alert alert-warning py-2 small mb-3">
+              <i class="bi bi-clock me-1"></i>
+              Next sync window: <strong>{{ window_status.next_at }}</strong>
+              <div class="mt-1 text-muted" style="font-size:0.8rem">Windows: 17:00, 23:30, 04:00–05:00</div>
+            </div>
+          {% endif %}
+        {% endif %}
+
+        <form action="{{ url_for('sync.run_sync') }}" method="POST">
+          {% set can_sync = unsynced_count > 0 and (role == 'super_admin' or (role == 'manager' and window_status and window_status.allowed)) %}
+          <button type="submit" class="btn btn-primary w-100 fw-semibold"
+                  {% if not can_sync %}disabled{% endif %}>
+            <i class="bi bi-cloud-upload me-2"></i>
+            {% if unsynced_count == 0 %}All Synced
+            {% elif role == 'manager' and window_status and not window_status.allowed %}Sync Locked
+            {% else %}Sync Now{% endif %}
+          </button>
+        </form>
+
+        <div class="text-muted small mt-2">
+          Pushes daily attendance (punch in/out + deduction) to ERP
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payload format reference -->
+  <div class="col-md-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-0 pt-3 pb-0">
+        <h6 class="fw-bold mb-0">ERP Payload Format</h6>
+        <div class="text-muted small">Each daily record sent to ERP contains:</div>
+      </div>
+      <div class="card-body pt-2">
+        <div class="row g-2 small">
+          {% set fields = [
+            ('employee_code', 'Unique employee ID'),
+            ('full_name', 'Employee name'),
+            ('department', 'Department'),
+            ('designation', 'Job title'),
+            ('date', 'Attendance date (YYYY-MM-DD)'),
+            ('punch_in', 'First clock-in time'),
+            ('punch_out', 'Last clock-out time'),
+            ('minutes_late', 'Late arrival in minutes'),
+            ('deduction_amount', 'PKR deduction (minutes_late × rate)'),
+            ('punch_source', 'biometric / manual'),
+            ('override_reason', 'Manual entry reason if applicable'),
+          ] %}
+          {% for field, desc in fields %}
+          <div class="col-6">
+            <code class="text-primary">{{ field }}</code>
+            <span class="text-muted ms-1">{{ desc }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Sync history -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-0 pt-3 d-flex justify-content-between align-items-center">
+    <h6 class="fw-bold mb-0">Sync History</h6>
+    <span class="text-muted small">Last 50 syncs</span>
+  </div>
+  <div class="card-body p-0">
+    {% if history %}
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width:160px">Timestamp</th>
+          <th style="width:80px">Records</th>
+          <th style="width:100px">Status</th>
+          <th style="width:100px">By</th>
+          <th>Records Synced</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in history %}
+        <tr>
+          <td class="small text-muted">{{ h.synced_at[:16] }}</td>
+          <td class="fw-semibold">{{ h.records_sent }}</td>
+          <td>
+            {% if h.status == 'success' %}
+              <span class="badge bg-success">Success</span>
+            {% elif h.status == 'partial' %}
+              <span class="badge bg-warning text-dark">Partial</span>
+            {% elif h.status == 'window_denied' %}
+              <span class="badge bg-warning text-dark">Blocked</span>
+            {% else %}
+              <span class="badge bg-danger">Failed</span>
+            {% endif %}
+            {% if h.error_message %}
+              <div class="text-danger small mt-1">{{ h.error_message[:100] }}</div>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ h.username or '—' }}</td>
+          <td>
+            {% if h.detail_records %}
+              <div class="d-flex flex-wrap gap-1">
+                {% for r in h.detail_records %}
+                <span class="badge bg-light text-dark border small"
+                      title="{{ r.name }} — In: {{ r.in or '—' }}  Out: {{ r.out or '—' }}  Deduction: {{ r.deduction }}">
+                  {{ r.emp }} · {{ r.date }}
+                  {% if r.deduction %}<span class="text-danger">-{{ r.deduction }}</span>{% endif %}
+                </span>
+                {% endfor %}
+              </div>
+            {% elif h.status == 'success' and h.records_sent == 0 %}
+              <span class="text-muted small">Nothing pending</span>
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-cloud-slash display-6 d-block mb-2"></i>
+        No sync history yet
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

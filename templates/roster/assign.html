@@ -1,0 +1,276 @@
+{% extends 'base.html' %}
+{% block title %}Assign Roster{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4">
+  <a href="{{ url_for('roster.list_rosters') }}" class="btn btn-sm btn-outline-secondary me-3">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h4 class="fw-bold mb-0">Assign Roster</h4>
+</div>
+
+<!-- Step 1: Select employee + date range -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-0 pt-3 pb-2">
+    <h6 class="fw-bold mb-0"><span class="badge bg-primary me-2">1</span>Select Employee &amp; Date Range</h6>
+  </div>
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label fw-semibold">Employee <span class="text-danger">*</span></label>
+        <select id="sel-employee" class="form-select">
+          <option value="">— Select employee —</option>
+          {% for e in employees %}
+            <option value="{{ e.id }}">{{ e.full_name }} ({{ e.employee_code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">From <span class="text-danger">*</span></label>
+        <input type="date" id="sel-from" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">To <span class="text-danger">*</span></label>
+        <input type="date" id="sel-to" class="form-control">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-primary w-100 fw-semibold" onclick="generateRows()">
+          <i class="bi bi-table me-1"></i>Generate
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Step 2: Row-by-row roster table -->
+<div id="roster-section" class="d-none">
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-0 pt-3 pb-2 d-flex justify-content-between align-items-center">
+      <h6 class="fw-bold mb-0"><span class="badge bg-primary me-2">2</span>Daily Schedule</h6>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary" onclick="applyShiftToAll()">
+          <i class="bi bi-arrow-down-up me-1"></i>Apply shift to all working days
+        </button>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0" id="roster-table">
+        <thead class="table-light">
+          <tr>
+            <th style="width:110px">Date</th>
+            <th style="width:90px">Day</th>
+            <th>Shift</th>
+            <th style="width:120px" class="text-center">Holiday / Off</th>
+          </tr>
+        </thead>
+        <tbody id="roster-tbody">
+          <!-- rows injected by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Step 3: Notes + Save -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-0 pt-3 pb-2">
+      <h6 class="fw-bold mb-0"><span class="badge bg-primary me-2">3</span>Notes &amp; Save</h6>
+    </div>
+    <div class="card-body">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Notes</label>
+        <textarea id="roster-notes" class="form-control" rows="2"
+                  placeholder="e.g. Ramadan schedule, training week…"></textarea>
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        <button class="btn btn-success fw-semibold px-4" onclick="saveRoster()">
+          <i class="bi bi-check2-circle me-2"></i>Save Roster
+        </button>
+        <a href="{{ url_for('roster.list_rosters') }}" class="btn btn-outline-secondary">Cancel</a>
+        <div id="save-status" class="ms-3 small"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Apply-to-all modal -->
+<div class="modal fade" id="applyAllModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h6 class="modal-title fw-bold">Apply shift to all working days</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label fw-semibold">Shift</label>
+        <select id="apply-shift-select" class="form-select">
+          {% for s in shifts %}
+            <option value="{{ s.id }}">{{ s.shift_name }} ({{ s.shift_start }}–{{ s.shift_end }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm fw-semibold" onclick="doApplyAll()">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const SHIFTS = [
+  {% for s in shifts %}
+  {id: {{ s.id }}, name: "{{ s.shift_name }}", start: "{{ s.shift_start }}", end: "{{ s.shift_end }}"},
+  {% endfor %}
+];
+
+// Python weekday: 0=Mon…6=Sun. JS Date.getDay(): 0=Sun,1=Mon…6=Sat
+// Convert: jsDay = (pyWeekday + 1) % 7
+const EMP_OFF_DAYS = {{ emp_off_days | tojson }};  // {emp_id: python_weekday}
+
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const PYDAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+// Set default date range: today → today + 6
+const today = new Date();
+document.getElementById('sel-from').value = fmtDate(today);
+const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 6);
+document.getElementById('sel-to').value = fmtDate(nextWeek);
+
+function fmtDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function generateRows() {
+  const empId = document.getElementById('sel-employee').value;
+  const from  = document.getElementById('sel-from').value;
+  const to    = document.getElementById('sel-to').value;
+
+  if (!empId)         { alert('Please select an employee first.'); return; }
+  if (!from || !to)   { alert('Please select a date range.'); return; }
+  if (from > to)      { alert('Start date must be before end date.'); return; }
+
+  const start = new Date(from), end = new Date(to);
+  const totalDays = Math.round((end - start) / 86400000) + 1;
+  if (totalDays > 31) { alert('Maximum 31 days per roster.'); return; }
+
+  // Employee's weekly off — convert Python weekday (0=Mon) to JS getDay (0=Sun)
+  const pyOffDay  = EMP_OFF_DAYS[empId] !== undefined ? EMP_OFF_DAYS[empId] : 6; // default Sunday
+  const jsOffDay  = (pyOffDay + 1) % 7;   // 0=Mon→1, 6=Sun→0
+
+  const tbody = document.getElementById('roster-tbody');
+  tbody.innerHTML = '';
+
+  const shiftOptions = SHIFTS.map(s =>
+    `<option value="${s.id}">${s.name} (${s.start}–${s.end})</option>`
+  ).join('');
+
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const dateStr  = fmtDate(d);
+    const dayName  = DAYS[d.getDay()];
+    const isOffDay = d.getDay() === jsOffDay;
+
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr id="row-${dateStr}">
+        <td class="fw-semibold">${dateStr}</td>
+        <td>
+          <span class="badge ${isOffDay ? 'bg-secondary' : 'bg-primary bg-opacity-10 text-primary'}">
+            ${dayName}${isOffDay ? ' 🏖' : ''}
+          </span>
+        </td>
+        <td>
+          <select class="form-select form-select-sm shift-select" id="shift-${dateStr}"
+                  ${isOffDay ? 'disabled' : ''}>
+            <option value="">— Select shift —</option>
+            ${shiftOptions}
+          </select>
+        </td>
+        <td class="text-center">
+          <div class="form-check form-switch d-flex justify-content-center">
+            <input class="form-check-input holiday-check" type="checkbox" role="switch"
+                   id="holiday-${dateStr}" ${isOffDay ? 'checked' : ''}
+                   onchange="toggleHoliday('${dateStr}')">
+          </div>
+        </td>
+      </tr>`);
+
+    if (isOffDay) toggleHoliday(dateStr, true);
+  }
+
+  // Show off-day label
+  const offDayName = PYDAYS[pyOffDay];
+  document.querySelector('#roster-section .card-header h6').innerHTML =
+    `<span class="badge bg-primary me-2">2</span>Daily Schedule` +
+    `<span class="badge bg-secondary ms-2 fw-normal">${offDayName} = Weekly Off</span>`;
+
+  document.getElementById('roster-section').classList.remove('d-none');
+  document.getElementById('roster-section').scrollIntoView({behavior:'smooth'});
+}
+
+function toggleHoliday(dateStr, forceState) {
+  const chk   = document.getElementById(`holiday-${dateStr}`);
+  const sel   = document.getElementById(`shift-${dateStr}`);
+  const row   = document.getElementById(`row-${dateStr}`);
+  const isHol = forceState !== undefined ? forceState : chk.checked;
+
+  chk.checked = isHol;
+  sel.disabled = isHol;
+  if (isHol) { sel.value = ''; row.classList.add('table-secondary'); }
+  else { row.classList.remove('table-secondary'); }
+}
+
+const applyAllModal = new bootstrap.Modal(document.getElementById('applyAllModal'));
+
+function applyShiftToAll() { applyAllModal.show(); }
+
+function doApplyAll() {
+  const shiftId = document.getElementById('apply-shift-select').value;
+  document.querySelectorAll('.shift-select:not(:disabled)').forEach(sel => {
+    sel.value = shiftId;
+  });
+  applyAllModal.hide();
+}
+
+async function saveRoster() {
+  const empId   = document.getElementById('sel-employee').value;
+  const notes   = document.getElementById('roster-notes').value.trim();
+  const status  = document.getElementById('save-status');
+  const btn     = document.querySelector('button[onclick="saveRoster()"]');
+
+  if (!empId) { alert('No employee selected.'); return; }
+
+  const entries = [];
+  document.querySelectorAll('#roster-tbody tr').forEach(row => {
+    const dateStr  = row.id.replace('row-', '');
+    const isHol    = document.getElementById(`holiday-${dateStr}`).checked;
+    const shiftSel = document.getElementById(`shift-${dateStr}`);
+    const shiftId  = shiftSel.value ? parseInt(shiftSel.value) : null;
+    entries.push({roster_date: dateStr, shift_id: shiftId, is_holiday: isHol});
+  });
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving…';
+  status.innerHTML = '';
+
+  const resp = await fetch('/roster/assign', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({employee_id: parseInt(empId), entries, notes}),
+  });
+  const data = await resp.json();
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Save Roster';
+
+  if (data.success) {
+    status.innerHTML = `<span class="text-success"><i class="bi bi-check2 me-1"></i>${data.saved} days saved</span>`;
+    setTimeout(() => { window.location = '/roster/'; }, 1200);
+  } else {
+    status.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>${data.error}</span>`;
+  }
+}
+</script>
+{% endblock %}

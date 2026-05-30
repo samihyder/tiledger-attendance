@@ -1,0 +1,504 @@
+{% extends 'base.html' %}
+{% block title %}Punch Screen{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="fw-bold mb-0">Punch Screen</h4>
+  <div class="d-flex align-items-center gap-2">
+    {% if manual_mode %}
+      <span class="badge bg-warning text-dark px-3 py-2 fs-6">
+        <i class="bi bi-pencil-square me-1"></i>Manual Mode — {{ today }}
+      </span>
+      <button class="btn btn-outline-danger btn-sm" onclick="disableManualMode()">
+        <i class="bi bi-fingerprint me-1"></i>Switch to Biometric
+      </button>
+    {% else %}
+      <button class="btn btn-outline-warning btn-sm" onclick="showManualModeModal()">
+        <i class="bi bi-unlock me-1"></i>Enable Manual Mode
+      </button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row">
+  <!-- Left: terminal -->
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm p-4">
+
+      <!-- Clock -->
+      <div id="clock" class="display-4 fw-bold text-dark mb-1 text-center"></div>
+      <div id="clock-date" class="text-muted mb-3 small text-center"></div>
+
+      {% if manual_mode %}
+      <!-- ── MANUAL MODE ── -->
+      <div class="text-center mb-3">
+        <i class="bi bi-person-fill-check" style="font-size:3.5rem;color:#ffc107"></i>
+        <div class="text-warning fw-semibold small mt-1">Manual Mode Active</div>
+      </div>
+      <select id="manual-employee" class="form-select form-select-lg mb-3">
+        <option value="">— Select Employee —</option>
+        {% for e in employees %}
+          <option value="{{ e.id }}">{{ e.full_name }} ({{ e.employee_code }})</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-warning btn-lg w-100 fw-semibold py-3" onclick="submitManualPunch()">
+        <i class="bi bi-check2-circle me-2"></i>Punch In / Out
+      </button>
+
+      {% else %}
+      <!-- ── MODE TABS ── -->
+      <ul class="nav nav-pills nav-fill mb-3" id="punch-tabs">
+        <li class="nav-item">
+          <button class="nav-link active" id="tab-bio" onclick="setMode('bio')">
+            <i class="bi bi-fingerprint me-1"></i>Fingerprint
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" id="tab-face" onclick="setMode('face')">
+            <i class="bi bi-person-bounding-box me-1"></i>Face
+            {% if face_mock %}<span class="badge bg-warning text-dark ms-1" style="font-size:0.55rem">MOCK</span>{% endif %}
+          </button>
+        </li>
+      </ul>
+
+      <!-- Biometric mode -->
+      <div id="mode-bio">
+        <div id="scanner-icon" class="text-center mb-3">
+          <i class="bi bi-fingerprint" style="font-size:6rem;color:#0d6efd;opacity:0.85"></i>
+        </div>
+        <div id="status-msg" class="text-muted small text-center mb-3">Place finger on scanner</div>
+        <button id="btn-scan" class="btn btn-primary btn-lg w-100 fw-semibold py-3" onclick="startScan()">
+          <i class="bi bi-fingerprint me-2"></i>Scan Finger
+        </button>
+      </div>
+
+      <!-- Face mode -->
+      <div id="mode-face" class="d-none">
+        {% if not face_templates_exist %}
+        <div class="alert alert-warning small text-center">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          No face templates enrolled yet.<br>
+          <a href="{{ url_for('employees.list_employees') }}">Enroll employees first →</a>
+        </div>
+        {% else %}
+        <!-- Camera preview -->
+        <div class="ratio ratio-4x3 bg-dark rounded-3 overflow-hidden mb-2" style="max-height:220px">
+          <video id="face-video" autoplay playsinline muted class="object-fit-cover d-none"></video>
+          <div id="face-placeholder" class="d-flex align-items-center justify-content-center">
+            <div class="text-center text-white opacity-50">
+              <i class="bi bi-camera-video" style="font-size:3rem"></i>
+              <div class="small mt-1">Click below to activate camera</div>
+            </div>
+          </div>
+        </div>
+        <canvas id="face-canvas" class="d-none"></canvas>
+
+        <!-- Liveness indicator -->
+        <div id="liveness-bar" class="d-none mb-2">
+          <div class="d-flex justify-content-between">
+            <small class="text-muted">Liveness</small>
+            <small id="liveness-label">—</small>
+          </div>
+          <div class="progress" style="height:5px">
+            <div id="liveness-fill" class="progress-bar bg-success" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Blink challenge -->
+        <div id="blink-challenge" class="d-none alert alert-primary py-2 text-center small mb-2">
+          <i class="bi bi-eye me-1"></i>
+          <strong>Please blink your eyes naturally</strong>
+          <div class="small text-muted">Looking for blink… <span id="blink-countdown"></span></div>
+        </div>
+
+        <div id="face-status" class="text-muted small text-center mb-2"></div>
+
+        <div class="d-grid gap-2">
+          <button id="btn-start-face-cam" class="btn btn-outline-info" onclick="startFaceCam()">
+            <i class="bi bi-camera-video me-2"></i>Activate Camera
+          </button>
+          <button id="btn-face-scan" class="btn btn-info text-white btn-lg fw-semibold py-2 d-none"
+                  onclick="startFaceScan()">
+            <i class="bi bi-person-bounding-box me-2"></i>Identify Face
+          </button>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Result -->
+      <div id="result-card" class="mt-3 d-none">
+        <div class="alert mb-0" id="result-alert">
+          <div class="fw-bold" id="result-name"></div>
+          <div class="small" id="result-detail"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Right: recent punches -->
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-0 pt-3">
+        <h6 class="fw-bold mb-0">Today's Activity</h6>
+      </div>
+      <div class="card-body p-0" id="recent-list">
+        {% if recent %}
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr><th>Employee</th><th>Time</th><th>Type</th><th>Late</th><th>Method</th></tr>
+          </thead>
+          <tbody id="recent-tbody">
+            {% for p in recent %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ p.full_name }}</div>
+                <div class="text-muted small">{{ p.employee_code }}</div>
+              </td>
+              <td class="fw-semibold">{{ p.punch_time[11:16] }}</td>
+              <td>
+                {% if p.punch_type == 'in' %}
+                  <span class="badge bg-success">IN</span>
+                {% else %}
+                  <span class="badge bg-secondary">OUT</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if p.minutes_late > 0 %}
+                  <span class="text-danger fw-semibold">{{ p.minutes_late }}m</span>
+                {% else %}
+                  <i class="bi bi-check2 text-success"></i>
+                {% endif %}
+              </td>
+              <td>
+                {% if p.punch_source == 'manual' %}
+                  <span class="badge bg-warning text-dark">Manual</span>
+                {% else %}
+                  <i class="bi bi-fingerprint text-primary"></i>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <div class="text-center text-muted py-4" id="no-punches">No punches yet today</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Manual mode modal -->
+<div class="modal fade" id="manualModeModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h6 class="modal-title fw-bold"><i class="bi bi-shield-lock me-2 text-warning"></i>Enable Manual Mode</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <p class="text-muted small">Enter override password to activate manual mode for today.</p>
+        <div id="modal-error" class="alert alert-danger d-none py-2 small"></div>
+        <input type="password" id="modal-password" class="form-control" placeholder="Override password">
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning btn-sm fw-semibold" onclick="activateManualMode()">Activate</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+// ── Clock ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-PK', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('clock-date').textContent =
+    now.toLocaleDateString('en-PK', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ── Mode switch ────────────────────────────────────────────────────────────
+let currentMode = 'bio';
+let faceStream = null;
+let livenessTimer = null;
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('mode-bio').classList.toggle('d-none', mode !== 'bio');
+  document.getElementById('mode-face').classList.toggle('d-none', mode !== 'face');
+  document.getElementById('tab-bio').classList.toggle('active', mode === 'bio');
+  document.getElementById('tab-face').classList.toggle('active', mode === 'face');
+
+  // Stop face camera when switching away
+  if (mode !== 'face' && faceStream) {
+    faceStream.getTracks().forEach(t => t.stop());
+    faceStream = null;
+    clearInterval(livenessTimer);
+  }
+}
+
+// ── Shared result display ──────────────────────────────────────────────────
+function showResult(data) {
+  const isIn   = data.punch_type === 'in';
+  const late   = data.minutes_late > 0
+    ? ` — <span class="text-danger fw-semibold">${data.minutes_late} min late</span>`
+    : ' — <span class="text-success">On time</span>';
+  const conf   = data.confidence ? ` · ${data.confidence}% match` : '';
+  const alert  = document.getElementById('result-alert');
+  alert.className = `alert alert-${isIn ? 'success' : 'secondary'}`;
+  document.getElementById('result-name').textContent = `${data.employee_name} (${data.employee_code})`;
+  document.getElementById('result-detail').innerHTML =
+    `<strong>${data.punch_type.toUpperCase()}</strong> at ${data.punch_time.slice(11,16)}${isIn ? late : ''}${conf}`;
+  document.getElementById('result-card').classList.remove('d-none');
+  prependRow(data);
+  setTimeout(() => document.getElementById('result-card').classList.add('d-none'), 5000);
+}
+
+function showError(msg) {
+  const a = document.getElementById('result-alert');
+  a.className = 'alert alert-danger';
+  document.getElementById('result-name').textContent = 'Error';
+  document.getElementById('result-detail').textContent = msg;
+  document.getElementById('result-card').classList.remove('d-none');
+  setTimeout(() => document.getElementById('result-card').classList.add('d-none'), 5000);
+}
+
+function prependRow(data) {
+  let tbody = document.getElementById('recent-tbody');
+  if (!tbody) {
+    document.getElementById('no-punches')?.remove();
+    document.getElementById('recent-list').innerHTML =
+      `<table class="table table-hover mb-0">
+        <thead class="table-light"><tr><th>Employee</th><th>Time</th><th>Type</th><th>Late</th><th>Method</th></tr></thead>
+        <tbody id="recent-tbody"></tbody></table>`;
+    tbody = document.getElementById('recent-tbody');
+  }
+  const isIn = data.punch_type === 'in';
+  const method = data.punch_method === 'face'
+    ? '<i class="bi bi-person-bounding-box text-info"></i>'
+    : data.punch_source === 'manual'
+    ? '<span class="badge bg-warning text-dark">Manual</span>'
+    : '<i class="bi bi-fingerprint text-primary"></i>';
+  const late = data.minutes_late > 0
+    ? `<span class="text-danger fw-semibold">${data.minutes_late}m</span>`
+    : `<i class="bi bi-check2 text-success"></i>`;
+  tbody.insertAdjacentHTML('afterbegin', `
+    <tr>
+      <td><div class="fw-semibold">${data.employee_name}</div>
+          <div class="text-muted small">${data.employee_code}</div></td>
+      <td class="fw-semibold">${data.punch_time.slice(11,16)}</td>
+      <td><span class="badge bg-${isIn?'success':'secondary'}">${data.punch_type.toUpperCase()}</span></td>
+      <td>${late}</td>
+      <td>${method}</td>
+    </tr>`);
+}
+
+// ── Biometric scan ─────────────────────────────────────────────────────────
+async function startScan() {
+  const btn    = document.getElementById('btn-scan');
+  const status = document.getElementById('status-msg');
+  const icon   = document.getElementById('scanner-icon');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Scanning…';
+  status.textContent = 'Place finger on scanner…';
+  icon.innerHTML = '<i class="bi bi-fingerprint" style="font-size:6rem;color:#ffc107;animation:pulse 1s infinite"></i>';
+
+  try {
+    const resp = await fetch('/attendance/api/biometric-punch', {method:'POST'});
+    const data = await resp.json();
+    if (data.success) {
+      icon.innerHTML = '<i class="bi bi-check-circle-fill" style="font-size:6rem;color:#198754"></i>';
+      showResult(data);
+      setTimeout(resetBio, 3000);
+    } else {
+      icon.innerHTML = '<i class="bi bi-x-circle-fill" style="font-size:6rem;color:#dc3545"></i>';
+      showError(data.error);
+      setTimeout(resetBio, 3000);
+    }
+  } catch(e) { showError('Device error'); setTimeout(resetBio, 2000); }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-fingerprint me-2"></i>Scan Finger';
+}
+
+function resetBio() {
+  document.getElementById('status-msg').textContent = 'Place finger on scanner';
+  document.getElementById('scanner-icon').innerHTML =
+    '<i class="bi bi-fingerprint" style="font-size:6rem;color:#0d6efd;opacity:0.85"></i>';
+}
+
+// ── Face recognition ───────────────────────────────────────────────────────
+async function startFaceCam() {
+  const btn   = document.getElementById('btn-start-face-cam');
+  const video = document.getElementById('face-video');
+  const ph    = document.getElementById('face-placeholder');
+  btn.disabled = true;
+  try {
+    faceStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' }
+    });
+    video.srcObject = faceStream;
+    video.classList.remove('d-none');
+    ph.classList.add('d-none');
+    btn.classList.add('d-none');
+    document.getElementById('btn-face-scan').classList.remove('d-none');
+    document.getElementById('face-status').innerHTML =
+      '<i class="bi bi-circle-fill text-success me-1" style="font-size:0.5rem"></i>Camera active';
+    // Periodic liveness preview
+    livenessTimer = setInterval(updateLivenessBar, 2000);
+  } catch(e) {
+    document.getElementById('face-status').innerHTML =
+      `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>${e.message}</span>`;
+    btn.disabled = false;
+  }
+}
+
+async function updateLivenessBar() {
+  const f = captureFrame();
+  if (!f) return;
+  try {
+    const resp = await fetch('/employees/api/liveness-check', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image: f}),
+    });
+    const data = await resp.json();
+    const score = data.score || 0;
+    document.getElementById('liveness-bar').classList.remove('d-none');
+    document.getElementById('liveness-fill').style.width = score + '%';
+    document.getElementById('liveness-fill').className =
+      `progress-bar ${score >= 75 ? 'bg-success' : score >= 50 ? 'bg-warning' : 'bg-danger'}`;
+    document.getElementById('liveness-label').textContent = score + '%';
+  } catch {}
+}
+
+function captureFrame() {
+  const video  = document.getElementById('face-video');
+  const canvas = document.getElementById('face-canvas');
+  if (!video.videoWidth) return null;
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+async function startFaceScan() {
+  const btn     = document.getElementById('btn-face-scan');
+  const status  = document.getElementById('face-status');
+  const blink   = document.getElementById('blink-challenge');
+  clearInterval(livenessTimer);
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Identifying…';
+
+  // ── Active liveness: collect frames for blink detection ──
+  status.innerHTML = '<span class="text-primary"><i class="bi bi-eye me-1"></i>Checking liveness…</span>';
+  blink.classList.remove('d-none');
+
+  const frames = [];
+  for (let i = 0; i < 6; i++) {
+    await new Promise(r => setTimeout(r, 250));
+    const f = captureFrame();
+    if (f) frames.push(f);
+    document.getElementById('blink-countdown').textContent = `${i+1}/6`;
+  }
+  blink.classList.add('d-none');
+
+  // Check blink
+  let blinkOk = true;  // default true for mock mode
+  try {
+    const blinkResp = await fetch('/attendance/api/blink-check', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({frames}),
+    });
+    const blinkData = await blinkResp.json();
+    blinkOk = blinkData.blink_detected !== false;
+    if (!blinkOk) {
+      status.innerHTML = `<span class="text-danger"><i class="bi bi-eye-slash me-1"></i>${blinkData.reason || 'No blink detected'}</span>`;
+      // Still proceed — passive anti-spoofing handles this too
+    }
+  } catch {}
+
+  // ── Identify ──
+  status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Matching face…</span>';
+  const frame = captureFrame();
+  if (!frame) {
+    showError('Camera frame empty — try again');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Identify Face';
+    livenessTimer = setInterval(updateLivenessBar, 2000);
+    return;
+  }
+
+  try {
+    const resp = await fetch('/attendance/api/face-punch', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image: frame}),
+    });
+    const data = await resp.json();
+    if (data.success) {
+      data.punch_method = 'face';
+      showResult(data);
+      status.innerHTML = `<span class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>Matched — ${data.confidence}% confidence</span>`;
+    } else {
+      status.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${data.error}</span>`;
+      showError(data.error);
+    }
+  } catch(e) { showError(`Error: ${e.message}`); }
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Identify Face';
+  livenessTimer = setInterval(updateLivenessBar, 2000);
+}
+
+// ── Manual mode ────────────────────────────────────────────────────────────
+async function submitManualPunch() {
+  const sel = document.getElementById('manual-employee');
+  const id  = sel.value;
+  if (!id) { sel.classList.add('is-invalid'); setTimeout(()=>sel.classList.remove('is-invalid'),2000); return; }
+  const btn = document.querySelector('button[onclick="submitManualPunch()"]');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Recording…';
+  try {
+    const resp = await fetch('/attendance/api/manual-punch', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({employee_id: parseInt(id)}),
+    });
+    const data = await resp.json();
+    data.success ? showResult(data) : showError(data.error);
+    if (data.success) sel.value = '';
+  } catch(e) { showError('Network error'); }
+  btn.disabled = false; btn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Punch In / Out';
+}
+
+const manualModeModal = new bootstrap.Modal(document.getElementById('manualModeModal'));
+function showManualModeModal() {
+  document.getElementById('modal-password').value = '';
+  document.getElementById('modal-error').classList.add('d-none');
+  manualModeModal.show();
+  setTimeout(()=>document.getElementById('modal-password').focus(), 300);
+}
+document.getElementById('modal-password')?.addEventListener('keydown', e=>{ if(e.key==='Enter') activateManualMode(); });
+async function activateManualMode() {
+  const pw  = document.getElementById('modal-password').value;
+  const err = document.getElementById('modal-error');
+  const resp = await fetch('/attendance/api/toggle-manual-mode',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw}),
+  });
+  const data = await resp.json();
+  data.success ? (manualModeModal.hide(), window.location.reload())
+               : (err.textContent=data.error||'Wrong password', err.classList.remove('d-none'));
+}
+async function disableManualMode() {
+  if(!confirm('Switch back to biometric mode?')) return;
+  const resp = await fetch('/attendance/api/toggle-manual-mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  const data = await resp.json();
+  if(data.success) window.location.reload();
+}
+</script>
+<style>
+@keyframes pulse {0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+{% endblock %}

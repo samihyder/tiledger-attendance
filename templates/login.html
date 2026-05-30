@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}Login — TiLedger Attendance{% endblock %}
+{% block content %}
+<div class="min-vh-100 d-flex align-items-center justify-content-center bg-dark">
+  <div class="card shadow-lg" style="width:380px">
+    <div class="card-body p-5">
+      <div class="text-center mb-4">
+        <i class="bi bi-fingerprint display-4 text-primary"></i>
+        <h4 class="mt-2 fw-bold">TiLedger Attendance</h4>
+        <p class="text-muted small">Local Desktop System — Secure Login</p>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} py-2 small">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <form method="POST">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Username</label>
+          <input type="text" name="username" class="form-control form-control-lg"
+                 autofocus autocomplete="username" required>
+        </div>
+        <div class="mb-4">
+          <label class="form-label fw-semibold">Password</label>
+          <input type="password" name="password" class="form-control form-control-lg"
+                 autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg w-100 fw-semibold">
+          <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

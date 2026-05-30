@@ -1,0 +1,384 @@
+{% extends 'base.html' %}
+{% block title %}Biometric Enrollment — {{ employee.full_name }}{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4">
+  <a href="{{ url_for('employees.list_employees') }}" class="btn btn-sm btn-outline-secondary me-3">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="fw-bold mb-0">Biometric Enrollment</h4>
+    <div class="text-muted small">{{ employee.full_name }} &bull; {{ employee.employee_code }}</div>
+  </div>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-md-8">
+
+    <div class="alert alert-info d-flex align-items-start mb-4">
+      <i class="bi bi-info-circle-fill me-3 fs-5 flex-shrink-0 mt-1"></i>
+      <div>
+        <strong>Enrollment Protocol</strong><br>
+        Register <strong>Right Index Finger</strong> (primary) and <strong>Left Index Finger</strong> (backup).
+        Each enrollment performs {{ scans_required if scans_required else 3 }} scans and merges them into a
+        single high-quality template. <strong>Do not lift your finger between scans.</strong>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-0 pt-3">
+        <h6 class="fw-bold mb-0">Finger Templates</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          {% for idx, label in finger_labels.items() %}
+          <div class="col-md-6">
+            <div class="border rounded-3 p-3 d-flex align-items-center justify-content-between
+                        {% if idx == primary_finger %}border-primary{% elif idx == backup_finger %}border-warning{% endif %}">
+              <div>
+                <div class="fw-semibold d-flex align-items-center">
+                  <i class="bi bi-fingerprint me-2
+                    {% if idx in enrolled_fingers %}text-success
+                    {% elif idx == primary_finger %}text-primary
+                    {% elif idx == backup_finger %}text-warning
+                    {% else %}text-secondary{% endif %}"></i>
+                  {{ label }}
+                  {% if idx == primary_finger %}
+                    <span class="badge bg-primary ms-2 small">Primary</span>
+                  {% elif idx == backup_finger %}
+                    <span class="badge bg-warning text-dark ms-2 small">Backup</span>
+                  {% endif %}
+                </div>
+                <div class="text-muted small mt-1" id="status-{{ idx }}">
+                  {% if idx in enrolled_fingers %}
+                    <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Enrolled</span>
+                  {% else %}
+                    Not enrolled
+                  {% endif %}
+                </div>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm {% if idx in enrolled_fingers %}btn-outline-success{% else %}btn-primary{% endif %}"
+                        id="btn-enroll-{{ idx }}"
+                        onclick="enrollFinger({{ employee.id }}, {{ idx }}, '{{ label }}')">
+                  {% if idx in enrolled_fingers %}
+                    <i class="bi bi-arrow-repeat me-1"></i>Re-enroll
+                  {% else %}
+                    <i class="bi bi-fingerprint me-1"></i>Enroll
+                  {% endif %}
+                </button>
+                {% if idx in enrolled_fingers %}
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteFinger({{ employee.id }}, {{ idx }}, '{{ label }}')"
+                        id="btn-del-{{ idx }}">
+                  <i class="bi bi-trash"></i>
+                </button>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Face Registration ─────────────────────────────────── -->
+    <div class="card border-0 shadow-sm mt-4">
+      <div class="card-header bg-white border-0 pt-3 pb-2">
+        <div class="d-flex justify-content-between align-items-center">
+          <h6 class="fw-bold mb-0">
+            <i class="bi bi-person-bounding-box me-2 text-info"></i>Face Registration
+            {% if face_mock %}<span class="badge bg-warning text-dark ms-2 small">MOCK</span>{% endif %}
+          </h6>
+          {% if face_enrolled %}
+            <span class="badge bg-success px-3">
+              <i class="bi bi-check-circle me-1"></i>Enrolled — quality {{ face_quality }}%
+            </span>
+          {% else %}
+            <span class="badge bg-secondary">Not enrolled</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="card-body">
+        {% if face_enrolled %}
+        <div class="alert alert-success py-2 small mb-3">
+          <i class="bi bi-check-circle-fill me-2"></i>
+          Face template enrolled on {{ face_enrolled_at[:16] }}.
+          Only the 128-dimension numeric embedding is stored — <strong>no image saved</strong>.
+        </div>
+        {% endif %}
+
+        <div class="alert alert-info py-2 small mb-3">
+          <i class="bi bi-shield-check me-2"></i>
+          <strong>Anti-spoofing active.</strong>
+          System checks for printed photos and screen displays.
+          Ensure good lighting and look directly at the camera.
+          {{ face_enroll_frames }} frames are captured and averaged for best quality.
+        </div>
+
+        <!-- Camera preview -->
+        <div class="row">
+          <div class="col-md-7">
+            <div class="ratio ratio-4x3 bg-dark rounded-3 overflow-hidden mb-3" style="max-height:280px">
+              <video id="face-video" autoplay playsinline muted class="object-fit-cover"></video>
+            </div>
+            <canvas id="face-canvas" class="d-none"></canvas>
+
+            <!-- Spoof indicators -->
+            <div id="spoof-bar" class="d-none mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <small class="fw-semibold">Liveness score</small>
+                <small id="spoof-score-label">—</small>
+              </div>
+              <div class="progress" style="height:8px">
+                <div id="spoof-bar-fill" class="progress-bar" style="width:0%"></div>
+              </div>
+              <div id="spoof-checks" class="row g-1 mt-2"></div>
+            </div>
+          </div>
+
+          <div class="col-md-5 d-flex flex-column justify-content-center">
+            <div id="face-status" class="text-muted small mb-3">
+              <i class="bi bi-camera me-1"></i>Camera not started
+            </div>
+            <div id="frame-progress" class="mb-3 d-none">
+              <div class="small fw-semibold mb-1">Capturing frames…</div>
+              <div class="progress" style="height:6px">
+                <div id="frame-bar" class="progress-bar bg-success" style="width:0%"></div>
+              </div>
+              <div class="small text-muted mt-1" id="frame-label">0 / {{ face_enroll_frames }}</div>
+            </div>
+
+            <div class="d-grid gap-2">
+              <button id="btn-start-camera" class="btn btn-outline-primary" onclick="startFaceCamera()">
+                <i class="bi bi-camera-video me-2"></i>Start Camera
+              </button>
+              <button id="btn-enroll-face" class="btn btn-info text-white fw-semibold d-none"
+                      onclick="enrollFace({{ employee.id }})">
+                <i class="bi bi-person-check me-2"></i>
+                Capture &amp; Register Face ({{ face_enroll_frames }} frames)
+              </button>
+              {% if face_enrolled %}
+              <button class="btn btn-outline-danger btn-sm"
+                      onclick="deleteFaceTemplate({{ employee.id }})">
+                <i class="bi bi-trash me-1"></i>Remove Face Template
+              </button>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center mt-4">
+      <a href="{{ url_for('employees.list_employees') }}" class="btn btn-outline-secondary me-2">Back to List</a>
+      <a href="{{ url_for('employees.edit_employee', employee_id=employee.id) }}"
+         class="btn btn-outline-primary">Edit Employee</a>
+    </div>
+
+  </div>
+</div>
+
+<!-- Enrollment progress modal -->
+<div class="modal fade" id="enrollModal" data-bs-backdrop="static" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content text-center p-4">
+      <i class="bi bi-fingerprint text-primary mb-3" style="font-size:4rem" id="modal-icon"></i>
+      <h6 class="fw-bold" id="modal-title">Enrolling…</h6>
+      <p class="text-muted small mb-3" id="modal-msg">Place your finger on the scanner and hold still.</p>
+      <div class="spinner-border text-primary" role="status" id="modal-spinner"></div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const enrollModal = new bootstrap.Modal(document.getElementById('enrollModal'));
+
+async function enrollFinger(empId, fingerIdx, fingerLabel) {
+  document.getElementById('modal-title').textContent = `Enrolling ${fingerLabel}`;
+  document.getElementById('modal-msg').textContent = 'Place finger on scanner — keep still for 3 scans.';
+  document.getElementById('modal-icon').className = 'bi bi-fingerprint text-primary mb-3';
+  document.getElementById('modal-spinner').style.display = '';
+  enrollModal.show();
+
+  try {
+    const resp = await fetch('/employees/api/enroll-finger', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({employee_id: empId, finger_index: fingerIdx}),
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      document.getElementById('modal-icon').className = 'bi bi-check-circle-fill text-success mb-3';
+      document.getElementById('modal-title').textContent = 'Enrolled!';
+      document.getElementById('modal-msg').textContent = `${data.finger_label} — quality ${data.quality}%`;
+      document.getElementById('modal-spinner').style.display = 'none';
+      document.getElementById(`status-${fingerIdx}`).innerHTML =
+        `<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Enrolled</span>`;
+      document.getElementById(`btn-enroll-${fingerIdx}`).className = 'btn btn-sm btn-outline-success';
+      document.getElementById(`btn-enroll-${fingerIdx}`).innerHTML =
+        '<i class="bi bi-arrow-repeat me-1"></i>Re-enroll';
+      setTimeout(() => enrollModal.hide(), 1500);
+    } else {
+      showModalError(data.error || 'Enrollment failed');
+    }
+  } catch(e) {
+    showModalError('Device error — check scanner connection');
+  }
+}
+
+async function deleteFinger(empId, fingerIdx, fingerLabel) {
+  if (!confirm(`Remove ${fingerLabel} template for this employee?`)) return;
+  await fetch('/employees/api/delete-finger', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({employee_id: empId, finger_index: fingerIdx}),
+  });
+  location.reload();
+}
+
+// ── Face enrollment ────────────────────────────────────────────────────────
+let faceStream = null;
+
+async function startFaceCamera() {
+  try {
+    faceStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' }
+    });
+    const video = document.getElementById('face-video');
+    video.srcObject = faceStream;
+    document.getElementById('btn-start-camera').classList.add('d-none');
+    document.getElementById('btn-enroll-face').classList.remove('d-none');
+    document.getElementById('face-status').innerHTML =
+      '<i class="bi bi-circle-fill text-success me-1" style="font-size:0.5rem"></i>Camera active — position your face in frame';
+    // Start periodic liveness preview
+    startLivenessPreview();
+  } catch (e) {
+    document.getElementById('face-status').innerHTML =
+      `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Camera error: ${e.message}</span>`;
+  }
+}
+
+let livenessTimer = null;
+function startLivenessPreview() {
+  livenessTimer = setInterval(async () => {
+    const b64 = captureFrame();
+    if (!b64) return;
+    try {
+      const resp = await fetch('/employees/api/liveness-check', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({image: b64}),
+      });
+      const data = await resp.json();
+      if (data.success !== false) updateSpoofBar(data);
+    } catch {}
+  }, 1500);
+}
+
+function updateSpoofBar(data) {
+  const bar    = document.getElementById('spoof-bar');
+  const fill   = document.getElementById('spoof-bar-fill');
+  const label  = document.getElementById('spoof-score-label');
+  const checks = document.getElementById('spoof-checks');
+  bar.classList.remove('d-none');
+
+  const score = data.score || 0;
+  fill.style.width = score + '%';
+  fill.className   = `progress-bar ${score >= 75 ? 'bg-success' : score >= 50 ? 'bg-warning' : 'bg-danger'}`;
+  label.textContent = score + '%';
+
+  if (data.checks) {
+    checks.innerHTML = Object.entries(data.checks).map(([k, c]) =>
+      `<div class="col-6">
+         <div class="d-flex align-items-center gap-1 small">
+           <i class="bi bi-${c.pass ? 'check-circle-fill text-success' : 'x-circle-fill text-danger'}"></i>
+           ${c.label}
+         </div>
+       </div>`
+    ).join('');
+  }
+}
+
+function captureFrame() {
+  const video  = document.getElementById('face-video');
+  const canvas = document.getElementById('face-canvas');
+  if (!video.videoWidth) return null;
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+async function enrollFace(empId) {
+  const FRAMES = {{ face_enroll_frames }};
+  const btn    = document.getElementById('btn-enroll-face');
+  const prog   = document.getElementById('frame-progress');
+  const bar    = document.getElementById('frame-bar');
+  const lbl    = document.getElementById('frame-label');
+  const status = document.getElementById('face-status');
+
+  clearInterval(livenessTimer);
+  btn.disabled = true;
+  prog.classList.remove('d-none');
+  status.innerHTML = '<i class="bi bi-camera-fill me-1 text-info"></i>Capturing frames…';
+
+  const frames = [];
+  for (let i = 0; i < FRAMES; i++) {
+    await new Promise(r => setTimeout(r, 600));
+    const f = captureFrame();
+    if (f) frames.push(f);
+    const pct = Math.round((i + 1) / FRAMES * 100);
+    bar.style.width = pct + '%';
+    lbl.textContent = `${i + 1} / ${FRAMES}`;
+  }
+
+  status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Processing anti-spoofing checks…</span>';
+
+  try {
+    const resp = await fetch('/employees/api/enroll-face', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({employee_id: empId, frames}),
+    });
+    const data = await resp.json();
+    prog.classList.add('d-none');
+
+    if (data.success) {
+      if (data.checks) updateSpoofBar({score: data.spoof_score, checks: data.checks});
+      status.innerHTML = `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>${data.message}</span>`;
+      btn.innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>Re-enroll Face';
+      setTimeout(() => location.reload(), 1800);
+    } else {
+      status.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${data.error}</span>`;
+      startLivenessPreview();
+    }
+  } catch (e) {
+    prog.classList.add('d-none');
+    status.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+  }
+  btn.disabled = false;
+}
+
+async function deleteFaceTemplate(empId) {
+  if (!confirm('Remove face template for this employee?')) return;
+  await fetch('/employees/api/delete-face', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({employee_id: empId}),
+  });
+  location.reload();
+}
+
+function showModalError(msg) {
+  document.getElementById('modal-icon').className = 'bi bi-x-circle-fill text-danger mb-3';
+  document.getElementById('modal-title').textContent = 'Failed';
+  document.getElementById('modal-msg').textContent = msg;
+  document.getElementById('modal-spinner').style.display = 'none';
+  setTimeout(() => enrollModal.hide(), 3000);
+}
+</script>
+{% endblock %}

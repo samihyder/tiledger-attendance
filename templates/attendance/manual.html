@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Manual Entry — Correction{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4">
+  <a href="{{ url_for('attendance.punch_screen') }}" class="btn btn-sm btn-outline-secondary me-3">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="fw-bold mb-0">Manual Entry — Backdated Correction</h4>
+    <p class="text-muted small mb-0">For correcting missed or wrong punches. A reason is mandatory and logged for audit.</p>
+  </div>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Employee <span class="text-danger">*</span></label>
+            <select name="employee_id" class="form-select" required>
+              <option value="">— Select employee —</option>
+              {% for e in employees %}
+                <option value="{{ e.id }}">{{ e.full_name }} ({{ e.employee_code }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Punch Type <span class="text-danger">*</span></label>
+              <select name="punch_type" class="form-select">
+                <option value="in">Punch IN</option>
+                <option value="out">Punch OUT</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Date & Time <span class="text-danger">*</span></label>
+              <input type="datetime-local" name="punch_time" class="form-control"
+                     value="{{ now }}" required>
+            </div>
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+            <textarea name="reason" class="form-control" rows="2" required
+                      placeholder="e.g. Scanner was offline, employee forgot to punch"></textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary fw-semibold px-4">
+              <i class="bi bi-check2-circle me-2"></i>Record Correction
+            </button>
+            <a href="{{ url_for('attendance.punch_screen') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

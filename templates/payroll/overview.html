@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% block title %}Payroll Overview{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">Payroll</h4>
+    <div class="text-muted small">{{ date_from }} to {{ date_to }}</div>
+  </div>
+</div>
+
+<!-- Period filter -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-3">
+    <form class="row g-2 align-items-end" method="GET">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">
+          <i class="bi bi-search me-1"></i>Generate
+        </button>
+      </div>
+      <div class="col-md-4 text-end">
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+          <i class="bi bi-printer me-1"></i>Print
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-primary">{{ rows|length }}</div>
+      <div class="text-muted small">Employees</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-success">{{ totals.present }}</div>
+      <div class="text-muted small">Total Attendance</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-danger">{{ totals.absent }}</div>
+      <div class="text-muted small">Total Absences</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-warning">{{ totals.late_days }}</div>
+      <div class="text-muted small">Late Instances</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-info">{{ totals.total_late_mins }}</div>
+      <div class="text-muted small">Total Late (min)</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-4 fw-bold text-danger">PKR {{ "%.0f"|format(totals.total_deduction) }}</div>
+      <div class="text-muted small">Total Deduction</div>
+    </div>
+  </div>
+</div>
+
+<!-- Employee table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-0 pt-3 pb-2">
+    <h6 class="fw-bold mb-0">Employee Summary</h6>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Employee</th>
+          <th class="text-center">Working<br>Days</th>
+          <th class="text-center">Present</th>
+          <th class="text-center">Absent</th>
+          <th class="text-center">Holidays</th>
+          <th class="text-center">Late<br>Days</th>
+          <th class="text-center">Total Late<br>(min)</th>
+          <th class="text-center">Rate<br>(PKR/min)</th>
+          <th class="text-end">Total<br>Deduction</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="{% if r.no_roster %}table-light text-muted{% endif %}">
+          <td>
+            <div class="fw-semibold">{{ r.full_name }}</div>
+            <div class="text-muted small">{{ r.employee_code }}{% if r.department %} · {{ r.department }}{% endif %}</div>
+          </td>
+          <td class="text-center">{{ r.working_days }}</td>
+          <td class="text-center">
+            <span class="{% if r.present > 0 %}text-success fw-semibold{% endif %}">{{ r.present }}</span>
+          </td>
+          <td class="text-center">
+            <span class="{% if r.absent > 0 %}text-danger fw-semibold{% endif %}">{{ r.absent }}</span>
+          </td>
+          <td class="text-center text-muted">{{ r.holidays }}</td>
+          <td class="text-center">
+            <span class="{% if r.late_days > 0 %}text-warning fw-semibold{% endif %}">{{ r.late_days }}</span>
+          </td>
+          <td class="text-center">
+            {% if r.total_late_mins > 0 %}
+              <span class="text-warning fw-semibold">{{ r.total_late_mins }}</span>
+            {% else %}
+              <span class="text-muted">0</span>
+            {% endif %}
+          </td>
+          <td class="text-center text-muted small">
+            {% if r.deduction_rate > 0 %}{{ r.deduction_rate }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end fw-bold">
+            {% if r.total_deduction > 0 %}
+              <span class="text-danger">PKR {{ "%.0f"|format(r.total_deduction) }}</span>
+            {% elif r.no_roster %}
+              <span class="text-muted small">No roster</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('payroll.detail', employee_id=r.employee_id) }}?date_from={{ date_from }}&date_to={{ date_to }}"
+               class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-list-ul"></i>
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10" class="text-center text-muted py-4">No employees found</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <!-- Grand total row -->
+      {% if rows %}
+      <tfoot class="table-dark">
+        <tr>
+          <td class="fw-bold">TOTAL</td>
+          <td class="text-center fw-bold">{{ totals.working_days }}</td>
+          <td class="text-center fw-bold text-success">{{ totals.present }}</td>
+          <td class="text-center fw-bold text-danger">{{ totals.absent }}</td>
+          <td class="text-center fw-bold">{{ totals.holidays }}</td>
+          <td class="text-center fw-bold">{{ totals.late_days }}</td>
+          <td class="text-center fw-bold">{{ totals.total_late_mins }}</td>
+          <td></td>
+          <td class="text-end fw-bold text-danger">PKR {{ "%.0f"|format(totals.total_deduction) }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+@media print {
+  .sidebar, .btn, form { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,12 @@
+# Local punch-station deployment (with biometric hardware + face recognition)
+# Install: pip install -r requirements-local.txt
+#
+# macOS:   brew install cmake && pip install -r requirements-local.txt
+# Linux:   sudo apt-get install cmake libopenblas-dev && pip install -r requirements-local.txt
+# Windows: pip install cmake, then pip install -r requirements-local.txt
+
+flask>=3.0.3
+numpy>=1.24.0
+Pillow>=10.0.0
+face_recognition>=1.3.0
+opencv-python>=4.8.0

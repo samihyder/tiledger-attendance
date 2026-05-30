@@ -1,0 +1,256 @@
+{% extends 'base.html' %}
+{% block title %}Payroll — {{ data.employee.full_name }}{% endblock %}
+{% block content %}
+
+<!-- Header -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div class="d-flex align-items-center">
+    <a href="{{ url_for('payroll.overview') }}?date_from={{ date_from }}&date_to={{ date_to }}"
+       class="btn btn-sm btn-outline-secondary me-3">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+      <h4 class="fw-bold mb-0">{{ data.employee.full_name }}</h4>
+      <div class="text-muted small">
+        {{ data.employee.employee_code }}
+        {% if data.employee.department %} · {{ data.employee.department }}{% endif %}
+        {% if data.employee.designation %} · {{ data.employee.designation }}{% endif %}
+        {% if data.employee.monthly_salary %}
+          · <span class="text-success fw-semibold">PKR {{ "{:,.0f}".format(data.employee.monthly_salary) }}/month</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+    <i class="bi bi-printer me-1"></i>Print
+  </button>
+</div>
+
+<!-- Period filter -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body py-3">
+    <form class="row g-2 align-items-end" method="GET">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">
+          <i class="bi bi-search me-1"></i>Generate
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-primary">{{ data.working_days }}</div>
+      <div class="text-muted small">Working Days</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-success">{{ data.present }}</div>
+      <div class="text-muted small">Present</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if data.absent > 0 %}text-danger{% else %}text-muted{% endif %}">
+        {{ data.absent }}
+      </div>
+      <div class="text-muted small">Absent</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold text-secondary">{{ data.holidays }}</div>
+      <div class="text-muted small">Holidays</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3">
+      <div class="fs-3 fw-bold {% if data.total_late_mins > 0 %}text-warning{% else %}text-muted{% endif %}">
+        {{ data.total_late_mins }}
+      </div>
+      <div class="text-muted small">Total Late (min)</div>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card border-0 shadow-sm text-center py-3 {% if data.total_deduction > 0 %}border-danger border-2{% endif %}">
+      <div class="fs-3 fw-bold {% if data.total_deduction > 0 %}text-danger{% else %}text-muted{% endif %}">
+        PKR {{ "%.0f"|format(data.total_deduction) }}
+      </div>
+      <div class="text-muted small">Total Deduction</div>
+    </div>
+  </div>
+</div>
+
+<!-- Deduction rate info -->
+{% if data.deduction_rate > 0 %}
+<div class="alert alert-info d-flex align-items-center py-2 mb-4">
+  <i class="bi bi-info-circle-fill me-2"></i>
+  <span class="small">
+    Late deduction rate: <strong>PKR {{ data.deduction_rate }} per minute</strong>.
+    Total = late minutes × rate per day.
+  </span>
+</div>
+{% else %}
+<div class="alert alert-warning d-flex align-items-center py-2 mb-4">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  <span class="small">
+    No late deduction rate set for this employee.
+    <a href="{{ url_for('employees.edit_employee', employee_id=data.employee.id) }}" class="ms-2">Set rate →</a>
+  </span>
+</div>
+{% endif %}
+
+<!-- Day-by-day table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-0 pt-3 pb-2">
+    <h6 class="fw-bold mb-0">
+      Daily Attendance — {{ date_from }} to {{ date_to }}
+    </h6>
+  </div>
+  <div class="card-body p-0">
+    {% if data.daily_records %}
+    <table class="table table-hover mb-0" id="payroll-table">
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Day</th>
+          <th>Shift</th>
+          <th>Status</th>
+          <th class="text-center">Punch In</th>
+          <th class="text-center">Punch Out</th>
+          <th class="text-center">Hours</th>
+          <th class="text-center">Late (min)</th>
+          <th class="text-end">Daily Deduction</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set days_map = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] %}
+        {% for r in data.daily_records %}
+        <tr class="
+          {% if r.status == 'Holiday' %}table-secondary
+          {% elif r.status == 'Absent' %}table-danger bg-opacity-10
+          {% elif r.minutes_late > 0 %}table-warning bg-opacity-10
+          {% endif %}">
+
+          <td class="fw-semibold">{{ r.date }}</td>
+
+          <td>
+            <span class="badge
+              {% if r.is_holiday %}bg-secondary
+              {% elif r.date | dayofweek in [4,5] %}bg-light text-dark border
+              {% else %}bg-primary bg-opacity-10 text-primary{% endif %}">
+              {{ r.date | dayname }}
+            </span>
+          </td>
+
+          <td class="small text-muted">{{ r.shift_name or '—' }}</td>
+
+          <td>
+            {% if r.status == 'Present' %}
+              <span class="badge bg-success">Present</span>
+            {% elif r.status == 'Absent' %}
+              <span class="badge bg-danger">Absent</span>
+            {% else %}
+              <span class="badge bg-secondary">Holiday</span>
+            {% endif %}
+            {% if r.punch_source == 'manual' and r.status == 'Present' %}
+              <span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem">M</span>
+            {% endif %}
+          </td>
+
+          <td class="text-center">
+            {% if r.punch_in %}
+              <span class="{% if r.minutes_late > 0 %}text-danger fw-semibold{% endif %}">
+                {{ r.punch_in }}
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+
+          <td class="text-center">{{ r.punch_out or '—' }}</td>
+
+          <td class="text-center">
+            {{ "%.1f"|format(r.hours_worked) if r.hours_worked is not none else '—' }}
+          </td>
+
+          <td class="text-center">
+            {% if r.minutes_late > 0 %}
+              <span class="text-danger fw-bold">{{ r.minutes_late }}</span>
+            {% elif r.status == 'Present' %}
+              <span class="text-success small"><i class="bi bi-check2"></i></span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+
+          <td class="text-end">
+            {% if r.daily_deduction > 0 %}
+              <span class="text-danger fw-bold">PKR {{ "%.0f"|format(r.daily_deduction) }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+
+      <!-- Totals footer -->
+      <tfoot class="table-dark">
+        <tr>
+          <td colspan="3" class="fw-bold">TOTALS</td>
+          <td>
+            <span class="text-success fw-bold">{{ data.present }}P</span>
+            <span class="text-danger fw-bold ms-2">{{ data.absent }}A</span>
+            <span class="text-secondary ms-2">{{ data.holidays }}H</span>
+          </td>
+          <td colspan="2"></td>
+          <td class="text-center fw-bold">
+            {% set total_hours = namespace(v=0) %}
+            {% for r in data.daily_records %}
+              {% if r.hours_worked %}{% set total_hours.v = total_hours.v + r.hours_worked %}{% endif %}
+            {% endfor %}
+            {{ "%.1f"|format(total_hours.v) }}h
+          </td>
+          <td class="text-center fw-bold text-danger">{{ data.total_late_mins }} min</td>
+          <td class="text-end fw-bold text-danger">
+            PKR {{ "%.0f"|format(data.total_deduction) }}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-calendar-x display-5 mb-3 d-block opacity-25"></i>
+      No roster assigned for this employee in the selected period.<br>
+      <a href="{{ url_for('roster.assign') }}" class="btn btn-primary mt-3 btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>Assign Roster
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+@media print {
+  .sidebar, .btn, form, .alert { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+  body { font-size: 12px; }
+}
+</style>
+{% endblock %}

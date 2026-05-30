@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — Attendance{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">Dashboard</h4>
+    <div class="text-muted small">{{ today }}</div>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('attendance.punch_screen') }}" class="btn btn-primary">
+      <i class="bi bi-fingerprint me-1"></i>Punch Screen
+    </a>
+    <form action="{{ url_for('sync.run_sync') }}" method="POST" class="d-inline">
+      <button type="submit" class="btn btn-outline-secondary">
+        <i class="bi bi-cloud-upload me-1"></i>Sync
+        {% if stats.unsynced > 0 %}
+          <span class="badge bg-warning text-dark ms-1">{{ stats.unsynced }}</span>
+        {% endif %}
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Stats cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center">
+          <div class="rounded-3 bg-primary bg-opacity-10 p-3 me-3">
+            <i class="bi bi-people fs-4 text-primary"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Total Employees</div>
+            <div class="fs-3 fw-bold">{{ stats.total_employees }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center">
+          <div class="rounded-3 bg-success bg-opacity-10 p-3 me-3">
+            <i class="bi bi-person-check fs-4 text-success"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Present Today</div>
+            <div class="fs-3 fw-bold text-success">{{ stats.present }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center">
+          <div class="rounded-3 bg-danger bg-opacity-10 p-3 me-3">
+            <i class="bi bi-person-x fs-4 text-danger"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Absent Today</div>
+            <div class="fs-3 fw-bold text-danger">{{ stats.absent }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center">
+          <div class="rounded-3 bg-warning bg-opacity-10 p-3 me-3">
+            <i class="bi bi-clock-history fs-4 text-warning"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Late Today</div>
+            <div class="fs-3 fw-bold text-warning">{{ stats.late }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent punches -->
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-0 pt-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <h6 class="fw-bold mb-0">Today's Punches</h6>
+          <a href="{{ url_for('attendance.log') }}" class="btn btn-sm btn-outline-primary">View All</a>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        {% if recent_punches %}
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Employee</th>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Late</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in recent_punches %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ p.full_name }}</div>
+                <div class="text-muted small">{{ p.employee_code }}</div>
+              </td>
+              <td>{{ p.punch_time[11:16] }}</td>
+              <td>
+                {% if p.punch_type == 'in' %}
+                  <span class="badge bg-success">IN</span>
+                {% else %}
+                  <span class="badge bg-secondary">OUT</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if p.minutes_late > 0 %}
+                  <span class="text-danger fw-semibold">{{ p.minutes_late }} min</span>
+                {% else %}
+                  <span class="text-success"><i class="bi bi-check2"></i> On time</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if p.punch_source == 'manual' %}
+                  <span class="badge bg-warning text-dark">Manual</span>
+                {% else %}
+                  <i class="bi bi-fingerprint text-primary"></i>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <div class="text-center text-muted py-4">No punches recorded today</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-0 pt-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-cloud-upload me-2"></i>Sync History</h6>
+      </div>
+      <div class="card-body p-0">
+        {% if sync_history %}
+          <ul class="list-group list-group-flush">
+            {% for s in sync_history %}
+            <li class="list-group-item px-3 py-2">
+              <div class="d-flex justify-content-between">
+                <span class="small">{{ s.synced_at[:16] }}</span>
+                {% if s.status == 'success' %}
+                  <span class="badge bg-success">{{ s.records_sent }} sent</span>
+                {% else %}
+                  <span class="badge bg-danger">Failed</span>
+                {% endif %}
+              </div>
+              {% if s.error_message %}
+                <div class="text-danger small text-truncate">{{ s.error_message }}</div>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="text-center text-muted py-3 small">No sync history</div>
+        {% endif %}
+        <div class="p-2">
+          <a href="{{ url_for('sync.sync_status') }}" class="btn btn-sm btn-outline-primary w-100">
+            Manage Sync
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

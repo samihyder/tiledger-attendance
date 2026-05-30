@@ -1,0 +1,252 @@
+{% extends 'base.html' %}
+{% block title %}Supabase Sync Settings{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4 gap-3">
+  <a href="{{ url_for('sync.sync_status') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h4 class="fw-bold mb-0">
+    <i class="bi bi-database me-2 text-primary"></i>Supabase Sync Settings
+  </h4>
+  {% if unlocked %}
+  <span class="badge bg-success ms-auto"><i class="bi bi-unlock-fill me-1"></i>Unlocked</span>
+  {% else %}
+  <span class="badge bg-secondary ms-auto"><i class="bi bi-lock-fill me-1"></i>Locked</span>
+  {% endif %}
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+
+    {% if not unlocked %}
+    <!-- ── Lock screen ──────────────────────────────────────────────────── -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-shield-lock display-3 text-secondary mb-3 d-block"></i>
+        <h5 class="fw-bold mb-1">Settings are locked</h5>
+        <p class="text-muted mb-4">Enter your Super Admin password to view and edit Supabase connection settings.</p>
+        <form method="POST" action="{{ url_for('sync.sync_settings') }}"
+              class="d-flex gap-2 justify-content-center" style="max-width:360px;margin:auto">
+          <input type="hidden" name="action" value="unlock">
+          <input type="password" name="password" class="form-control"
+                 placeholder="Your admin password" autofocus required>
+          <button type="submit" class="btn btn-primary px-4">
+            <i class="bi bi-unlock me-1"></i>Unlock
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Masked summary -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-0 pt-3">
+        <h6 class="fw-bold mb-0 text-muted">Current Configuration (masked)</h6>
+      </div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-sm-4 text-muted">Supabase Project URL</dt>
+          <dd class="col-sm-8 font-monospace">
+            {% if settings.url %}
+              {{ settings.url[:12] }}{{ '•' * 20 }}
+            {% else %}<span class="text-danger">Not configured</span>{% endif %}
+          </dd>
+
+          <dt class="col-sm-4 text-muted">Service Role Key</dt>
+          <dd class="col-sm-8">
+            {% if settings.has_key %}
+              <span class="text-success"><i class="bi bi-check-circle me-1"></i>Stored (encrypted)</span>
+            {% else %}<span class="text-danger">Not configured</span>{% endif %}
+          </dd>
+
+          <dt class="col-sm-4 text-muted">Table Name</dt>
+          <dd class="col-sm-8 font-monospace">
+            {{ settings.table or '<span class="text-danger">Not set</span>' }}
+          </dd>
+        </dl>
+      </div>
+    </div>
+
+    {% else %}
+    <!-- ── Unlocked: edit form ──────────────────────────────────────────── -->
+    <div class="card border-0 shadow-sm border-success mb-4">
+      <div class="card-header bg-success bg-opacity-10 border-0 pt-3 d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0 text-success">
+          <i class="bi bi-pencil me-1"></i>Edit Supabase Connection
+        </h6>
+        <form method="POST" action="{{ url_for('sync.sync_settings') }}" class="mb-0">
+          <input type="hidden" name="action" value="lock">
+          <button type="submit" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-lock me-1"></i>Lock
+          </button>
+        </form>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('sync.sync_settings') }}">
+          <input type="hidden" name="action" value="save">
+
+          <!-- Project URL -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold">
+              Supabase Project URL
+            </label>
+            <input type="url" name="supabase_url" class="form-control font-monospace"
+                   value="{{ settings.url }}"
+                   placeholder="https://xxxxxxxxxxxx.supabase.co" required>
+            <div class="form-text">
+              Found in Supabase Dashboard → Project Settings → API → Project URL.
+            </div>
+          </div>
+
+          <!-- Service Role Key -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold">
+              Service Role Key
+              <span class="badge bg-warning text-dark ms-1 small">Encrypted at rest</span>
+            </label>
+            <div class="input-group">
+              <input type="password" id="keyInput" name="supabase_key"
+                     class="form-control font-monospace"
+                     value="{{ settings.api_key }}"
+                     placeholder="{% if settings.has_key %}Leave blank to keep existing key{% else %}eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...{% endif %}">
+              <button type="button" class="btn btn-outline-secondary"
+                      onclick="toggleReveal('keyInput', this)" title="Show / hide key">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+            <div class="form-text">
+              Found in Supabase Dashboard → Project Settings → API → <strong>service_role</strong> (secret).
+              Use the service role key — it bypasses Row Level Security for server-to-server writes.
+              {% if settings.has_key %}
+                Leave blank to keep the existing stored key.
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Table Name -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Table Name</label>
+            <input type="text" name="supabase_table" class="form-control font-monospace"
+                   value="{{ settings.table }}" placeholder="attendance_daily" required>
+            <div class="form-text">
+              The Supabase table that receives daily attendance records.
+              See the required schema below.
+            </div>
+          </div>
+
+          <hr>
+
+          <!-- Full URL preview -->
+          <div class="alert alert-light border small mb-4">
+            <div class="text-muted mb-1">Records will be posted to:</div>
+            <code id="urlPreview" class="text-primary">
+              {{ settings.url }}/rest/v1/{{ settings.table }}
+            </code>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="small text-muted">
+              <i class="bi bi-info-circle me-1"></i>
+              Saving locks the page — re-enter password to view again.
+            </div>
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-floppy me-1"></i>Save Settings
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Required Supabase table schema -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-0 pt-3">
+        <h6 class="fw-bold mb-0">Required Supabase Table Schema</h6>
+        <div class="text-muted small">Run this SQL in your Supabase SQL Editor once.</div>
+      </div>
+      <div class="card-body p-0">
+        <pre class="bg-dark text-light rounded-bottom p-3 mb-0" style="font-size:0.78rem"><code>CREATE TABLE IF NOT EXISTS attendance_daily (
+  id               BIGSERIAL PRIMARY KEY,
+  employee_code    TEXT        NOT NULL,
+  full_name        TEXT        NOT NULL,
+  department       TEXT,
+  designation      TEXT,
+  date             DATE        NOT NULL,
+  punch_in         TIME,
+  punch_out        TIME,
+  minutes_late     INTEGER     NOT NULL DEFAULT 0,
+  deduction_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+  punch_source     TEXT,
+  override_reason  TEXT,
+  synced_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  UNIQUE (employee_code, date)   -- required for upsert
+);
+
+-- Allow server-side inserts (service role bypasses RLS automatically)
+ALTER TABLE attendance_daily ENABLE ROW LEVEL SECURITY;</code></pre>
+      </div>
+    </div>
+
+    {% endif %}
+
+    <!-- Payload reference (always visible) -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-0 pt-3">
+        <h6 class="fw-bold mb-0 text-muted">What Gets Sent to Supabase</h6>
+      </div>
+      <div class="card-body p-0">
+        <pre class="bg-light rounded-bottom p-3 mb-0" style="font-size:0.78rem"><code>POST /rest/v1/{{ settings.table or 'attendance_daily' }}
+apikey: &lt;service_role_key&gt;
+Authorization: Bearer &lt;service_role_key&gt;
+Prefer: return=minimal, resolution=merge-duplicates
+
+[
+  {
+    "employee_code":    "EMP-001",
+    "full_name":        "Sami Haider",
+    "department":       "Head Office",
+    "designation":      "Manager",
+    "date":             "2026-05-30",
+    "punch_in":         "09:05:23",
+    "punch_out":        "18:02:11",
+    "minutes_late":     5,
+    "deduction_amount": 125.00,
+    "punch_source":     "biometric",
+    "override_reason":  null
+  }
+]</code></pre>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleReveal(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.innerHTML = '<i class="bi bi-eye-slash"></i>';
+  } else {
+    input.type = 'password';
+    btn.innerHTML = '<i class="bi bi-eye"></i>';
+  }
+}
+
+(function () {
+  const urlInput   = document.querySelector('[name="supabase_url"]');
+  const tableInput = document.querySelector('[name="supabase_table"]');
+  const preview    = document.getElementById('urlPreview');
+  if (!urlInput || !tableInput || !preview) return;
+  function update() {
+    const base  = (urlInput.value || '').replace(/\/+$/, '');
+    const table = tableInput.value || '';
+    preview.textContent = base + '/rest/v1/' + table;
+  }
+  urlInput.addEventListener('input', update);
+  tableInput.addEventListener('input', update);
+})();
+</script>
+{% endblock %}

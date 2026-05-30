@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if edit else 'New' }} Shift{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+  <a href="{{ url_for('roster.list_shifts') }}" class="btn btn-sm btn-outline-secondary me-3"><i class="bi bi-arrow-left"></i></a>
+  <h4 class="fw-bold mb-0">{{ 'Edit Shift' if edit else 'New Shift' }}</h4>
+</div>
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Shift Name</label>
+            <input type="text" name="shift_name" class="form-control"
+                   value="{{ shift.get('shift_name','') }}" required>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Start Time</label>
+              <input type="time" name="shift_start" class="form-control"
+                     value="{{ shift.get('shift_start','09:00') }}" required>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">End Time</label>
+              <input type="time" name="shift_end" class="form-control"
+                     value="{{ shift.get('shift_end','18:00') }}" required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Grace Period (minutes)</label>
+            <input type="number" name="grace_minutes" class="form-control"
+                   value="{{ shift.get('grace_minutes', 10) }}" min="0" max="60" required>
+            <div class="form-text">Employees punching within this window are not marked late.</div>
+          </div>
+          {% if edit %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Status</label>
+            <select name="active" class="form-select">
+              <option value="1" {% if shift.get('active',1) %}selected{% endif %}>Active</option>
+              <option value="0" {% if not shift.get('active',1) %}selected{% endif %}>Inactive</option>
+            </select>
+          </div>
+          {% endif %}
+          <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary fw-semibold px-4">Save</button>
+            <a href="{{ url_for('roster.list_shifts') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
