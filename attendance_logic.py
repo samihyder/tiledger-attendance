@@ -12,7 +12,7 @@ def calculate_minutes_late(punch_time: datetime, shift_start_str: str, grace_min
     Compare punch_time against shift_start + grace_period.
     Returns minutes late measured from shift_start (0 if within grace window).
     """
-    shift_h, shift_m = map(int, shift_start_str.split(':'))
+    shift_h, shift_m = map(int, shift_start_str.split(':')[:2])
     shift_start = punch_time.replace(hour=shift_h, minute=shift_m, second=0, microsecond=0)
     grace_end = shift_start + timedelta(minutes=grace_minutes)
     if punch_time <= grace_end:
