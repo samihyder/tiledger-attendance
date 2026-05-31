@@ -62,6 +62,16 @@ def create_app() -> Flask:
 
     register_blueprints(app)
 
+    # Return JSON (not HTML) for any unhandled exception on API endpoints
+    @app.errorhandler(Exception)
+    def api_error(e):
+        import traceback
+        from flask import request as req, jsonify as jfy
+        print(traceback.format_exc())
+        if req.path and '/api/' in req.path:
+            return jfy({'success': False, 'error': str(e)}), 500
+        raise e
+
     # Diagnostic endpoint — no auth
     @app.route('/health')
     def health():

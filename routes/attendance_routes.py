@@ -42,74 +42,73 @@ def punch_screen():
 @attendance_bp.route('/api/toggle-manual-mode', methods=['POST'])
 @login_required
 def api_toggle_manual_mode():
-    user = current_user()
-    role = user['role'] if user else ''
-    if role not in ('super_admin', 'manager', 'store'):
-        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    try:
+        user = current_user()
+        role = user['role'] if user else ''
+        if role not in ('super_admin', 'manager', 'store'):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
-    data = request.get_json()
-    today = date.today().strftime('%Y-%m-%d')
-    if _is_manual_mode_today():
-        db.disable_manual_mode()
-        return jsonify({'success': True, 'manual_mode': False})
-    if data.get('password', '') != Config.OVERRIDE_PASSWORD:
-        return jsonify({'success': False, 'error': 'Incorrect override password'}), 403
-    db.enable_manual_mode(today)
-    # Grant override session so manager/store can also use the backdated /manual page
-    session['override_active'] = True
-    return jsonify({'success': True, 'manual_mode': True, 'message': f'Manual mode enabled for {today}'})
+        data  = request.get_json(silent=True) or {}
+        today = date.today().strftime('%Y-%m-%d')
+        if _is_manual_mode_today():
+            db.disable_manual_mode()
+            return jsonify({'success': True, 'manual_mode': False})
+        if data.get('password', '') != Config.OVERRIDE_PASSWORD:
+            return jsonify({'success': False, 'error': 'Incorrect override password'}), 403
+        db.enable_manual_mode(today)
+        session['override_active'] = True
+        return jsonify({'success': True, 'manual_mode': True, 'message': f'Manual mode enabled for {today}'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @attendance_bp.route('/api/manual-punch', methods=['POST'])
 @login_required
 @permission_required('punch')
 def api_manual_punch():
-    if not _is_manual_mode_today():
-        return jsonify({'success': False, 'error': 'Manual mode is not active for today'}), 403
-    data = request.get_json()
-    employee_id = int(data.get('employee_id', 0))
-    if not employee_id:
-        return jsonify({'success': False, 'error': 'Select an employee'}), 400
-    result = logic.process_manual_day_punch(employee_id, override_by=session['user_id'])
-    return jsonify(result), 200 if result['success'] else 400
+    try:
+        if not _is_manual_mode_today():
+            return jsonify({'success': False, 'error': 'Manual mode is not active for today'}), 403
+        data = request.get_json(silent=True) or {}
+        employee_id = int(data.get('employee_id', 0))
+        if not employee_id:
+            return jsonify({'success': False, 'error': 'Select an employee'}), 400
+        result = logic.process_manual_day_punch(employee_id, override_by=session['user_id'])
+        return jsonify(result), 200 if result['success'] else 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @attendance_bp.route('/api/face-punch', methods=['POST'])
 @login_required
 @permission_required('punch')
 def api_face_punch():
-    """
-    Face identification + punch.
-    Expects JSON: {embedding: [float x 128]}
-    Descriptor extracted client-side by face-api.js.
-    """
-    data      = request.get_json()
-    embedding = data.get('embedding', [])
-    if not embedding or len(embedding) != 128:
-        return jsonify({'success': False, 'error': 'Invalid face embedding from browser'}), 400
-
-    templates = db.get_all_face_templates()
-    if not templates:
-        return jsonify({'success': False, 'error': 'No face templates enrolled yet'}), 400
-
-    template_list = [
-        {'employee_id': t['employee_id'], 'embedding': t['embedding'],
-         'full_name': t['full_name'], 'employee_code': t['employee_code']}
-        for t in templates
-    ]
-
     try:
+        data      = request.get_json(silent=True) or {}
+        embedding = data.get('embedding', [])
+        if not embedding or len(embedding) != 128:
+            return jsonify({'success': False, 'error': 'Invalid face embedding from browser'}), 400
+
+        templates = db.get_all_face_templates()
+        if not templates:
+            return jsonify({'success': False, 'error': 'No face templates enrolled yet'}), 400
+
+        template_list = [
+            {'employee_id': t['employee_id'], 'embedding': t['embedding'],
+             'full_name': t['full_name'], 'employee_code': t['employee_code']}
+            for t in templates
+        ]
+
         matched = face.identify(embedding, template_list)
+        if not matched:
+            return jsonify({'success': False, 'error': 'Face not recognised — try again or use manual entry'}), 401
+
+        result = logic.process_biometric_punch(matched['employee_id'])
+        result['confidence']   = matched.get('confidence', 0)
+        result['punch_method'] = 'face'
+        return jsonify(result)
     except Exception as e:
-        return jsonify({'success': False, 'error': f'Face recognition error: {e}'}), 500
-
-    if not matched:
-        return jsonify({'success': False, 'error': 'Face not recognised — try again or use manual entry'}), 401
-
-    result = logic.process_biometric_punch(matched['employee_id'])
-    result['confidence']   = matched.get('confidence', 0)
-    result['punch_method'] = 'face'
-    return jsonify(result)
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @attendance_bp.route('/api/blink-check', methods=['POST'])
