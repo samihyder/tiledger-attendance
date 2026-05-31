@@ -18,6 +18,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'change-this-in-production-32chars!')
     SESSION_PERMANENT = True
     PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
+    APPLICATION_ROOT = os.environ.get('APPLICATION_ROOT', '/')
 
     # Database
     DATABASE_PATH = os.path.join(BASE_DIR, 'instance', 'attendance.db')

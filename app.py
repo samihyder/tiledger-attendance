@@ -68,8 +68,33 @@ def create_app() -> Flask:
     return app
 
 
+class _PrefixMiddleware:
+    """
+    Sets SCRIPT_NAME so Flask's url_for() generates correct URLs when the app
+    is mounted at a subpath (e.g. kitchenos.chipyeat.com/attendance).
+    Without this, redirects and url_for() would produce paths without the prefix.
+    """
+    def __init__(self, wsgi_app, prefix):
+        self.app = wsgi_app
+        self.prefix = prefix.rstrip('/')
+
+    def __call__(self, environ, start_response):
+        path = environ.get('PATH_INFO', '')
+        if path.startswith(self.prefix):
+            environ['PATH_INFO'] = path[len(self.prefix):] or '/'
+        environ['SCRIPT_NAME'] = environ.get('SCRIPT_NAME', '') + self.prefix
+        return self.app(environ, start_response)
+
+
 # Expose app at module level for Vercel / WSGI
 app = create_app()
+
+# Mount at subpath when APPLICATION_ROOT is set (e.g. /attendance on Vercel)
+_root = Config.APPLICATION_ROOT
+if _root and _root != '/':
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = _PrefixMiddleware(app.wsgi_app, _root)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 if __name__ == '__main__':
     print(f'\n  TiLedger Attendance System')
