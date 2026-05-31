@@ -4,6 +4,17 @@ Run: python app.py
 Access: http://127.0.0.1:5050
 """
 
+import os, time
+
+# Apply timezone from TZ_LOCATION env var (TZ is reserved by Vercel)
+_tz = os.environ.get('TZ_LOCATION')
+if _tz:
+    os.environ['TZ'] = _tz
+    try:
+        time.tzset()
+    except AttributeError:
+        pass  # Windows — no tzset
+
 from flask import Flask
 from config import Config
 import db_manager as db

@@ -13,6 +13,6 @@
     }
   ],
   "env": {
-    "TZ": "Asia/Karachi"
+    "TZ_LOCATION": "Asia/Karachi"
   }
 }
