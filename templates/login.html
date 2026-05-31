@@ -5,9 +5,9 @@
   <div class="card shadow-lg" style="width:380px">
     <div class="card-body p-5">
       <div class="text-center mb-4">
-        <i class="bi bi-fingerprint display-4 text-primary"></i>
-        <h4 class="mt-2 fw-bold">TiLedger Attendance</h4>
-        <p class="text-muted small">Local Desktop System — Secure Login</p>
+        <img src="{{ url_for('static', filename='img/logo.svg') }}" width="72" height="72" alt="TiLedger">
+        <h4 class="mt-3 fw-bold">TiLedger Attendance</h4>
+        <p class="text-muted small">Web App Attendance System — Secure Login</p>
       </div>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
