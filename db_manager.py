@@ -61,22 +61,25 @@ def _one(data: list):
 # ── Init / seed ───────────────────────────────────────────────────────────────
 
 def init_db():
-    """Seed default admin user and shift on first run. Idempotent."""
-    sb = _sb()
-    if not _one(sb.table('app_users').select('id').eq('username', 'admin').limit(1).execute().data):
-        sb.table('app_users').insert({
-            'username':      'admin',
-            'password_hash': hash_password('admin@2026'),
-            'full_name':     'Super Admin',
-            'role':          'super_admin',
-        }).execute()
-    if not _one(sb.table('shifts').select('id').limit(1).execute().data):
-        sb.table('shifts').insert({
-            'shift_name':    'Morning Shift',
-            'shift_start':   '09:00:00',
-            'shift_end':     '18:00:00',
-            'grace_minutes': 10,
-        }).execute()
+    """Seed default admin user and shift on first run. Idempotent. Non-fatal."""
+    try:
+        sb = _sb()
+        if not _one(sb.table('app_users').select('id').eq('username', 'admin').limit(1).execute().data):
+            sb.table('app_users').insert({
+                'username':      'admin',
+                'password_hash': hash_password('admin@2026'),
+                'full_name':     'Super Admin',
+                'role':          'super_admin',
+            }).execute()
+        if not _one(sb.table('shifts').select('id').limit(1).execute().data):
+            sb.table('shifts').insert({
+                'shift_name':    'Morning Shift',
+                'shift_start':   '09:00:00',
+                'shift_end':     '18:00:00',
+                'grace_minutes': 10,
+            }).execute()
+    except Exception as e:
+        print(f'[WARN] DB init skipped: {e}')
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
