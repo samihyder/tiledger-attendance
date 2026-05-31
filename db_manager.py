@@ -1,28 +1,97 @@
 """
-db_manager.py — Supabase primary data layer.
-All reads/writes go directly to Supabase using the service_role key (bypasses RLS).
-SQLite is no longer used.
+db_manager.py — Supabase data layer via direct REST API (stdlib urllib + json only).
+No third-party client libraries — avoids Vercel serverless startup crashes.
 """
 
 import hashlib
 import base64
 import json
+import urllib.request
+import urllib.parse
+import urllib.error
 from datetime import datetime
 from config import Config
 
-# ── Supabase client ───────────────────────────────────────────────────────────
 
-_supabase = None
+# ── REST helpers ──────────────────────────────────────────────────────────────
 
-def _sb():
-    global _supabase
-    if _supabase is None:
-        from supabase import create_client
-        _supabase = create_client(Config.SUPABASE_URL, Config.SUPABASE_SERVICE_KEY)
-    return _supabase
+def _hdr(extra: dict = None) -> dict:
+    h = {
+        'apikey':        Config.SUPABASE_SERVICE_KEY,
+        'Authorization': f'Bearer {Config.SUPABASE_SERVICE_KEY}',
+        'Accept':        'application/json',
+    }
+    if extra:
+        h.update(extra)
+    return h
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+def _pv(v) -> str:
+    """Python value → PostgREST filter value string."""
+    if v is True:  return 'true'
+    if v is False: return 'false'
+    if v is None:  return 'null'
+    return str(v)
+
+
+def _get(table: str, select: str = '*', filters=(), order: str = None,
+         limit: int = None) -> list:
+    """GET rows. filters is a list of (column, 'op.value') tuples."""
+    params = [('select', select)] + list(filters)
+    if order:  params.append(('order', order))
+    if limit:  params.append(('limit', str(limit)))
+    url = f'{Config.SUPABASE_URL}/rest/v1/{table}?{urllib.parse.urlencode(params)}'
+    req = urllib.request.Request(url, headers=_hdr())
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read()) or []
+
+
+def _one(table: str, select: str = '*', filters=()) -> dict | None:
+    rows = _get(table, select, filters, limit=1)
+    return rows[0] if rows else None
+
+
+def _insert(table: str, row: dict) -> dict:
+    url = f'{Config.SUPABASE_URL}/rest/v1/{table}'
+    req = urllib.request.Request(url, data=json.dumps(row).encode(), method='POST',
+        headers=_hdr({'Content-Type': 'application/json',
+                      'Prefer':       'return=representation'}))
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())[0]
+
+
+def _upsert(table: str, data, on_conflict: str = None) -> list:
+    qs = f'?on_conflict={urllib.parse.quote(on_conflict)}' if on_conflict else ''
+    url = f'{Config.SUPABASE_URL}/rest/v1/{table}{qs}'
+    req = urllib.request.Request(url, data=json.dumps(data).encode(), method='POST',
+        headers=_hdr({'Content-Type': 'application/json',
+                      'Prefer':       'return=representation,resolution=merge-duplicates'}))
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read()) or []
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f'Upsert {table}: {e.code} {e.read().decode()}') from e
+
+
+def _patch(table: str, data: dict, filters=()) -> None:
+    params = urllib.parse.urlencode(list(filters))
+    url = f'{Config.SUPABASE_URL}/rest/v1/{table}?{params}'
+    req = urllib.request.Request(url, data=json.dumps(data).encode(), method='PATCH',
+        headers=_hdr({'Content-Type': 'application/json',
+                      'Prefer':       'return=minimal'}))
+    with urllib.request.urlopen(req, timeout=15) as r:
+        r.read()
+
+
+def _delete(table: str, filters=()) -> None:
+    params = urllib.parse.urlencode(list(filters))
+    url = f'{Config.SUPABASE_URL}/rest/v1/{table}?{params}'
+    req = urllib.request.Request(url, method='DELETE', headers=_hdr())
+    with urllib.request.urlopen(req, timeout=15) as r:
+        r.read()
+
+
+# ── Row normalisers ───────────────────────────────────────────────────────────
 
 def _nt(s) -> str:
     """Normalize TIMESTAMPTZ → 'YYYY-MM-DD HH:MM:SS'."""
@@ -36,7 +105,7 @@ def _nt(s) -> str:
 
 
 def _flat(row: dict, *tables: str) -> dict:
-    """Flatten embedded PostgREST join dicts into the parent row."""
+    """Flatten embedded PostgREST join objects into the parent row."""
     row = dict(row)
     for t in tables:
         if isinstance(row.get(t), dict):
@@ -54,30 +123,25 @@ def _norm_log(row: dict) -> dict:
     return row
 
 
-def _one(data: list):
-    return data[0] if data else None
-
-
 # ── Init / seed ───────────────────────────────────────────────────────────────
 
 def init_db():
-    """Seed default admin user and shift on first run. Idempotent. Non-fatal."""
+    """Seed default admin user and shift on first run. Non-fatal."""
     try:
-        sb = _sb()
-        if not _one(sb.table('app_users').select('id').eq('username', 'admin').limit(1).execute().data):
-            sb.table('app_users').insert({
+        if not _one('app_users', 'id', [('username', 'eq.admin')]):
+            _insert('app_users', {
                 'username':      'admin',
                 'password_hash': hash_password('admin@2026'),
                 'full_name':     'Super Admin',
                 'role':          'super_admin',
-            }).execute()
-        if not _one(sb.table('shifts').select('id').limit(1).execute().data):
-            sb.table('shifts').insert({
+            })
+        if not _get('shifts', 'id', limit=1):
+            _insert('shifts', {
                 'shift_name':    'Morning Shift',
                 'shift_start':   '09:00:00',
                 'shift_end':     '18:00:00',
                 'grace_minutes': 10,
-            }).execute()
+            })
     except Exception as e:
         print(f'[WARN] DB init skipped: {e}')
 
@@ -91,26 +155,25 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hash_password(password) == password_hash
 
 def get_user(username: str):
-    result = _sb().table('app_users').select('*').eq('username', username).eq('active', True).limit(1).execute()
-    return _one(result.data)
+    return _one('app_users', '*',
+                [('username', f'eq.{username}'), ('active', 'eq.true')])
 
 def update_last_login(user_id: int):
-    _sb().table('app_users').update({'last_login': datetime.utcnow().isoformat()}).eq('id', user_id).execute()
+    _patch('app_users', {'last_login': datetime.utcnow().isoformat()},
+           [('id', f'eq.{user_id}')])
 
 
 # ── Employees ─────────────────────────────────────────────────────────────────
 
 def get_employees(active_only=True):
-    q = _sb().table('employees').select('*')
-    if active_only:
-        q = q.eq('active', True)
-    return q.order('full_name').execute().data
+    filters = [('active', 'eq.true')] if active_only else []
+    return _get('employees', '*', filters, order='full_name')
 
 def get_employee(employee_id: int):
-    return _one(_sb().table('employees').select('*').eq('id', employee_id).limit(1).execute().data)
+    return _one('employees', '*', [('id', f'eq.{employee_id}')])
 
 def get_employee_by_code(code: str):
-    return _one(_sb().table('employees').select('*').eq('employee_code', code).limit(1).execute().data)
+    return _one('employees', '*', [('employee_code', f'eq.{code}')])
 
 def auto_deduction_rate(monthly_salary: float) -> float:
     if not monthly_salary or monthly_salary <= 0:
@@ -121,7 +184,7 @@ def create_employee(data: dict, created_by: int) -> int:
     salary   = float(data.get('monthly_salary', 0) or 0)
     override = bool(data.get('deduction_rate_override', False))
     rate     = float(data.get('late_deduction_per_minute', 0) or 0) if override else auto_deduction_rate(salary)
-    result = _sb().table('employees').insert({
+    row = _insert('employees', {
         'employee_code':             data['employee_code'],
         'full_name':                 data['full_name'],
         'department':                data.get('department') or None,
@@ -134,14 +197,14 @@ def create_employee(data: dict, created_by: int) -> int:
         'late_deduction_per_minute': rate,
         'deduction_rate_override':   override,
         'created_by':                created_by,
-    }).execute()
-    return result.data[0]['id']
+    })
+    return row['id']
 
 def update_employee(employee_id: int, data: dict):
     salary   = float(data.get('monthly_salary', 0) or 0)
     override = bool(data.get('deduction_rate_override', False))
     rate     = float(data.get('late_deduction_per_minute', 0) or 0) if override else auto_deduction_rate(salary)
-    _sb().table('employees').update({
+    _patch('employees', {
         'full_name':                 data['full_name'],
         'department':                data.get('department') or None,
         'designation':               data.get('designation') or None,
@@ -153,13 +216,13 @@ def update_employee(employee_id: int, data: dict):
         'late_deduction_per_minute': rate,
         'deduction_rate_override':   override,
         'active':                    bool(data.get('active', True)),
-    }).eq('id', employee_id).execute()
+    }, [('id', f'eq.{employee_id}')])
 
 def delete_employee(employee_id: int):
-    _sb().table('employees').update({'active': False}).eq('id', employee_id).execute()
+    _patch('employees', {'active': False}, [('id', f'eq.{employee_id}')])
 
 
-# ── Biometric templates (stub — fingerprint hardware not available on Vercel) ──
+# ── Biometric templates (stub — fingerprint hardware not on Vercel) ────────────
 
 def save_template(*args, **kwargs): pass
 def get_templates_for_employee(employee_id: int): return []
@@ -170,125 +233,116 @@ def delete_template(employee_id: int, finger_index: int): pass
 # ── Shifts ────────────────────────────────────────────────────────────────────
 
 def get_shifts(active_only=True):
-    q = _sb().table('shifts').select('*')
-    if active_only:
-        q = q.eq('active', True)
-    return q.order('shift_name').execute().data
+    filters = [('active', 'eq.true')] if active_only else []
+    return _get('shifts', '*', filters, order='shift_name')
 
 def get_shift(shift_id: int):
-    return _one(_sb().table('shifts').select('*').eq('id', shift_id).limit(1).execute().data)
+    return _one('shifts', '*', [('id', f'eq.{shift_id}')])
 
 def create_shift(data: dict) -> int:
-    result = _sb().table('shifts').insert({
+    row = _insert('shifts', {
         'shift_name':    data['shift_name'],
         'shift_start':   data['shift_start'],
         'shift_end':     data['shift_end'],
         'grace_minutes': int(data.get('grace_minutes', Config.DEFAULT_GRACE_MINUTES)),
-    }).execute()
-    return result.data[0]['id']
+    })
+    return row['id']
 
 def update_shift(shift_id: int, data: dict):
-    _sb().table('shifts').update({
+    _patch('shifts', {
         'shift_name':    data['shift_name'],
         'shift_start':   data['shift_start'],
         'shift_end':     data['shift_end'],
         'grace_minutes': int(data.get('grace_minutes', 10)),
         'active':        bool(data.get('active', True)),
-    }).eq('id', shift_id).execute()
+    }, [('id', f'eq.{shift_id}')])
 
 
 # ── Rosters ───────────────────────────────────────────────────────────────────
 
 def get_roster_for_date(employee_id: int, roster_date: str):
-    result = _sb().table('rosters').select(
-        '*, shifts(shift_name, shift_start, shift_end, grace_minutes)'
-    ).eq('employee_id', employee_id).eq('roster_date', roster_date).limit(1).execute()
-    row = _one(result.data)
-    return _flat(row, 'shifts') if row else None
+    rows = _get('rosters', '*,shifts(shift_name,shift_start,shift_end,grace_minutes)',
+                [('employee_id', f'eq.{employee_id}'), ('roster_date', f'eq.{roster_date}')],
+                limit=1)
+    return _flat(rows[0], 'shifts') if rows else None
 
 def get_rosters(date_from: str = None, date_to: str = None, employee_id: int = None):
-    q = _sb().table('rosters').select(
-        '*, employees(full_name, employee_code), shifts(shift_name, shift_start, shift_end, grace_minutes)'
-    )
-    if date_from:    q = q.gte('roster_date', date_from)
-    if date_to:      q = q.lte('roster_date', date_to)
-    if employee_id:  q = q.eq('employee_id', employee_id)
-    q = q.order('roster_date').order('employee_id')
-    return [_flat(r, 'employees', 'shifts') for r in q.execute().data]
+    f = []
+    if date_from:    f.append(('roster_date', f'gte.{date_from}'))
+    if date_to:      f.append(('roster_date', f'lte.{date_to}'))
+    if employee_id:  f.append(('employee_id', f'eq.{employee_id}'))
+    rows = _get('rosters',
+                '*,employees(full_name,employee_code),shifts(shift_name,shift_start,shift_end,grace_minutes)',
+                f, order='roster_date,employee_id')
+    return [_flat(r, 'employees', 'shifts') for r in rows]
 
 def upsert_roster(employee_id: int, shift_id, roster_date: str,
                   is_holiday: bool, notes: str, created_by: int) -> int:
-    result = _sb().table('rosters').upsert({
+    rows = _upsert('rosters', {
         'employee_id': employee_id,
         'shift_id':    shift_id,
         'roster_date': roster_date,
         'is_holiday':  bool(is_holiday),
         'notes':       notes or None,
         'created_by':  created_by,
-    }, on_conflict='employee_id,roster_date').execute()
-    return result.data[0]['id']
+    }, on_conflict='employee_id,roster_date')
+    return rows[0]['id'] if rows else 0
 
 def save_roster_batch(employee_id: int, entries: list, notes: str, created_by: int):
-    rows = [
-        {
-            'employee_id': employee_id,
-            'shift_id':    e.get('shift_id'),
-            'roster_date': e['roster_date'],
-            'is_holiday':  bool(e.get('is_holiday')),
-            'notes':       notes or None,
-            'created_by':  created_by,
-        }
-        for e in entries
-    ]
+    rows = [{
+        'employee_id': employee_id,
+        'shift_id':    e.get('shift_id'),
+        'roster_date': e['roster_date'],
+        'is_holiday':  bool(e.get('is_holiday')),
+        'notes':       notes or None,
+        'created_by':  created_by,
+    } for e in entries]
     if rows:
-        _sb().table('rosters').upsert(rows, on_conflict='employee_id,roster_date').execute()
+        _upsert('rosters', rows, on_conflict='employee_id,roster_date')
 
 def delete_roster(roster_id: int):
-    _sb().table('rosters').delete().eq('id', roster_id).execute()
+    _delete('rosters', [('id', f'eq.{roster_id}')])
 
 
-# ── Face templates (128-d embeddings, no images stored) ───────────────────────
+# ── Face templates ────────────────────────────────────────────────────────────
 
 def save_face_template(employee_id: int, embedding_json: str, quality: float, enrolled_by: int):
-    _sb().table('face_templates').upsert({
+    _upsert('face_templates', {
         'employee_id': employee_id,
         'embedding':   embedding_json,
         'quality':     quality,
         'enrolled_by': enrolled_by,
         'enrolled_at': datetime.utcnow().isoformat(),
-    }, on_conflict='employee_id').execute()
+    }, on_conflict='employee_id')
 
 def get_face_template(employee_id: int):
-    row = _one(_sb().table('face_templates').select('*').eq('employee_id', employee_id).limit(1).execute().data)
+    row = _one('face_templates', '*', [('employee_id', f'eq.{employee_id}')])
     if row:
         row['enrolled_at'] = _nt(row.get('enrolled_at'))
     return row
 
 def get_all_face_templates():
-    result = _sb().table('face_templates').select(
-        '*, employees(full_name, employee_code)'
-    ).execute()
-    return [_flat(r, 'employees') for r in result.data]
+    rows = _get('face_templates', '*,employees(full_name,employee_code)')
+    return [_flat(r, 'employees') for r in rows]
 
 def delete_face_template(employee_id: int):
-    _sb().table('face_templates').delete().eq('employee_id', employee_id).execute()
+    _delete('face_templates', [('employee_id', f'eq.{employee_id}')])
 
 
 # ── Attendance ────────────────────────────────────────────────────────────────
 
 def get_last_punch(employee_id: int, date_str: str):
-    result = _sb().table('attendance_logs').select('*').eq(
-        'employee_id', employee_id
-    ).gte('punch_time', f'{date_str}T00:00:00').lte(
-        'punch_time', f'{date_str}T23:59:59'
-    ).order('punch_time', desc=True).limit(1).execute()
-    row = _one(result.data)
-    return _norm_log(row) if row else None
+    rows = _get('attendance_logs', '*',
+                [('employee_id', f'eq.{employee_id}'),
+                 ('punch_time',  f'gte.{date_str}T00:00:00'),
+                 ('punch_time',  f'lte.{date_str}T23:59:59')],
+                order='punch_time.desc', limit=1)
+    return _norm_log(rows[0]) if rows else None
 
 def record_punch(employee_id: int, punch_time: str, punch_type: str,
                  punch_source: str, minutes_late: int, roster_id=None,
                  override_reason: str = None, override_by: int = None) -> int:
-    result = _sb().table('attendance_logs').insert({
+    row = _insert('attendance_logs', {
         'employee_id':    employee_id,
         'punch_time':     punch_time,
         'punch_type':     punch_type,
@@ -297,125 +351,124 @@ def record_punch(employee_id: int, punch_time: str, punch_type: str,
         'roster_id':      roster_id,
         'override_reason': override_reason,
         'override_by':    override_by,
-    }).execute()
-    return result.data[0]['id']
+    })
+    return row['id']
 
 def get_attendance_logs(date_from: str = None, date_to: str = None,
                         employee_id: int = None, synced: int = None):
-    q = _sb().table('attendance_logs').select('*, employees(full_name, employee_code)')
-    if date_from:   q = q.gte('punch_time', f'{date_from}T00:00:00')
-    if date_to:     q = q.lte('punch_time', f'{date_to}T23:59:59')
-    if employee_id: q = q.eq('employee_id', employee_id)
-    if synced is not None: q = q.eq('synced', bool(synced))
-    q = q.order('punch_time', desc=True)
-    return [_norm_log(r) for r in q.execute().data]
+    f = []
+    if date_from:   f.append(('punch_time', f'gte.{date_from}T00:00:00'))
+    if date_to:     f.append(('punch_time', f'lte.{date_to}T23:59:59'))
+    if employee_id: f.append(('employee_id', f'eq.{employee_id}'))
+    if synced is not None: f.append(('synced', f'eq.{_pv(bool(synced))}'))
+    rows = _get('attendance_logs', '*,employees(full_name,employee_code)',
+                f, order='punch_time.desc')
+    return [_norm_log(r) for r in rows]
 
 def get_unsynced_logs():
-    result = _sb().table('attendance_logs').select(
-        '*, employees(full_name, employee_code, department, designation, late_deduction_per_minute)'
-    ).eq('synced', False).order('punch_time').limit(Config.SYNC_BATCH_SIZE).execute()
-    return [_norm_log(r) for r in result.data]
+    rows = _get('attendance_logs',
+                '*,employees(full_name,employee_code,department,designation,late_deduction_per_minute)',
+                [('synced', 'eq.false')], order='punch_time',
+                limit=Config.SYNC_BATCH_SIZE)
+    return [_norm_log(r) for r in rows]
 
 def edit_punch(log_id: int, new_punch_time: str, edited_by: int):
-    _sb().table('attendance_logs').update({
+    _patch('attendance_logs', {
         'punch_time':     new_punch_time,
         'override_by':    edited_by,
         'override_reason': '[edited by admin]',
         'synced':         False,
         'synced_at':      None,
-    }).eq('id', log_id).execute()
+    }, [('id', f'eq.{log_id}')])
 
 def update_punch_minutes_late(log_id: int, minutes_late: int):
-    _sb().table('attendance_logs').update({'minutes_late': minutes_late}).eq('id', log_id).execute()
+    _patch('attendance_logs', {'minutes_late': minutes_late}, [('id', f'eq.{log_id}')])
 
 def get_punch(log_id: int):
-    result = _sb().table('attendance_logs').select(
-        '*, employees(full_name, employee_code)'
-    ).eq('id', log_id).limit(1).execute()
-    row = _one(result.data)
-    return _norm_log(row) if row else None
+    rows = _get('attendance_logs', '*,employees(full_name,employee_code)',
+                [('id', f'eq.{log_id}')], limit=1)
+    return _norm_log(rows[0]) if rows else None
 
 def mark_synced(log_ids: list):
     if not log_ids:
         return
-    _sb().table('attendance_logs').update({
-        'synced':    True,
-        'synced_at': datetime.utcnow().isoformat(),
-    }).in_('id', log_ids).execute()
+    ids_str = ','.join(str(i) for i in log_ids)
+    _patch('attendance_logs',
+           {'synced': True, 'synced_at': datetime.utcnow().isoformat()},
+           [('id', f'in.({ids_str})')])
 
 def record_sync_log(records_sent: int, status: str, error_message: str,
                     synced_by: int, sync_detail: str = None):
-    _sb().table('sync_log').insert({
+    _insert('sync_log', {
         'records_sent':  records_sent,
         'status':        status,
         'error_message': error_message,
         'synced_by':     synced_by,
         'sync_detail':   sync_detail,
-    }).execute()
+    })
 
 def get_sync_history(limit=20):
-    result = _sb().table('sync_log').select(
-        '*, app_users(username)'
-    ).order('synced_at', desc=True).limit(limit).execute()
-    rows = []
-    for r in result.data:
+    rows = _get('sync_log', '*,app_users(username)',
+                order='synced_at.desc', limit=limit)
+    result = []
+    for r in rows:
         r = _flat(r, 'app_users')
         r['synced_at'] = _nt(r.get('synced_at'))
-        rows.append(r)
-    return rows
+        result.append(r)
+    return result
 
 
 # ── Dashboard stats ───────────────────────────────────────────────────────────
 
 def get_today_stats(date_str: str) -> dict:
-    sb = _sb()
-    total    = sb.table('employees').select('id', count='exact').eq('active', True).execute().count or 0
-    today    = sb.table('attendance_logs').select(
-        'employee_id, punch_type, minutes_late'
-    ).gte('punch_time', f'{date_str}T00:00:00').lte('punch_time', f'{date_str}T23:59:59').execute().data
-    present  = {l['employee_id'] for l in today if l['punch_type'] == 'in'}
-    late     = {l['employee_id'] for l in today if l['punch_type'] == 'in' and (l.get('minutes_late') or 0) > 0}
-    unsynced = sb.table('attendance_logs').select('id', count='exact').eq('synced', False).execute().count or 0
+    emp_rows  = _get('employees', 'id', [('active', 'eq.true')])
+    total     = len(emp_rows)
+    today_logs = _get('attendance_logs', 'employee_id,punch_type,minutes_late',
+                      [('punch_time', f'gte.{date_str}T00:00:00'),
+                       ('punch_time', f'lte.{date_str}T23:59:59')])
+    present  = {l['employee_id'] for l in today_logs if l['punch_type'] == 'in'}
+    late     = {l['employee_id'] for l in today_logs
+                if l['punch_type'] == 'in' and (l.get('minutes_late') or 0) > 0}
+    unsynced_rows = _get('attendance_logs', 'id', [('synced', 'eq.false')])
     return {
         'total_employees': total,
         'present':         len(present),
         'absent':          total - len(present),
         'late':            len(late),
-        'unsynced':        unsynced,
+        'unsynced':        len(unsynced_rows),
     }
 
 
 # ── App users management ──────────────────────────────────────────────────────
 
 def get_app_users():
-    return _sb().table('app_users').select(
-        'id, username, full_name, role, active, created_at, last_login'
-    ).execute().data
+    return _get('app_users', 'id,username,full_name,role,active,created_at,last_login')
 
 def create_app_user(username: str, password: str, full_name: str, role: str) -> int:
-    result = _sb().table('app_users').insert({
+    row = _insert('app_users', {
         'username':      username,
         'password_hash': hash_password(password),
         'full_name':     full_name,
         'role':          role,
-    }).execute()
-    return result.data[0]['id']
+    })
+    return row['id']
 
 def update_app_user_password(user_id: int, new_password: str):
-    _sb().table('app_users').update({'password_hash': hash_password(new_password)}).eq('id', user_id).execute()
+    _patch('app_users', {'password_hash': hash_password(new_password)},
+           [('id', f'eq.{user_id}')])
 
 def toggle_app_user(user_id: int, active: bool):
-    _sb().table('app_users').update({'active': bool(active)}).eq('id', user_id).execute()
+    _patch('app_users', {'active': bool(active)}, [('id', f'eq.{user_id}')])
 
 
 # ── App settings (key-value store) ────────────────────────────────────────────
 
 def get_setting(key: str, default=None):
-    row = _one(_sb().table('app_settings').select('value').eq('key', key).limit(1).execute().data)
+    row = _one('app_settings', 'value', [('key', f'eq.{key}')])
     return row['value'] if row else default
 
 def set_setting(key: str, value: str):
-    _sb().table('app_settings').upsert({'key': key, 'value': value}, on_conflict='key').execute()
+    _upsert('app_settings', {'key': key, 'value': value}, on_conflict='key')
 
 
 # ── Encrypted settings (XOR-cipher for API keys stored in app_settings) ───────
@@ -441,16 +494,13 @@ def decrypt_setting(ciphertext: str) -> str:
 
 # ── ERP Supabase sync settings (DB 2) ─────────────────────────────────────────
 
-_ERP_URL_KEY = 'erp_supabase_url'
-_ERP_KEY_ENC = 'erp_supabase_key_enc'
-
-# Legacy keys kept for sync settings UI (DB 1 display)
 _SB_URL_KEY   = 'supabase_url'
 _SB_KEY_ENC   = 'supabase_key_enc'
 _SB_TABLE_KEY = 'supabase_table'
+_ERP_URL_KEY  = 'erp_supabase_url'
+_ERP_KEY_ENC  = 'erp_supabase_key_enc'
 
 def get_sync_settings() -> dict:
-    """Returns attendance DB settings (DB 1) — primarily for display."""
     url     = get_setting(_SB_URL_KEY)   or Config.SUPABASE_URL
     key_enc = get_setting(_SB_KEY_ENC)
     api_key = decrypt_setting(key_enc) if key_enc else Config.SUPABASE_KEY
@@ -501,29 +551,24 @@ def disable_manual_mode():
 # ── Payroll ───────────────────────────────────────────────────────────────────
 
 def get_payroll_detail(employee_id: int, date_from: str, date_to: str) -> dict:
-    sb = _sb()
-
-    employee = _one(sb.table('employees').select('*').eq('id', employee_id).limit(1).execute().data)
+    employee = _one('employees', '*', [('id', f'eq.{employee_id}')])
     if not employee:
         return {}
 
-    rosters = [
-        _flat(r, 'shifts')
-        for r in sb.table('rosters').select(
-            '*, shifts(shift_name, shift_start, shift_end, grace_minutes)'
-        ).eq('employee_id', employee_id).gte('roster_date', date_from).lte(
-            'roster_date', date_to
-        ).order('roster_date').execute().data
-    ]
+    roster_rows = _get('rosters',
+                       '*,shifts(shift_name,shift_start,shift_end,grace_minutes)',
+                       [('employee_id', f'eq.{employee_id}'),
+                        ('roster_date', f'gte.{date_from}'),
+                        ('roster_date', f'lte.{date_to}')],
+                       order='roster_date')
+    rosters = [_flat(r, 'shifts') for r in roster_rows]
 
-    logs = [
-        _norm_log(r)
-        for r in sb.table('attendance_logs').select('*').eq(
-            'employee_id', employee_id
-        ).gte('punch_time', f'{date_from}T00:00:00').lte(
-            'punch_time', f'{date_to}T23:59:59'
-        ).order('punch_time').execute().data
-    ]
+    log_rows = _get('attendance_logs', '*',
+                    [('employee_id', f'eq.{employee_id}'),
+                     ('punch_time',  f'gte.{date_from}T00:00:00'),
+                     ('punch_time',  f'lte.{date_to}T23:59:59')],
+                    order='punch_time')
+    logs = [_norm_log(r) for r in log_rows]
 
     from collections import defaultdict
     logs_by_date = defaultdict(list)
@@ -539,7 +584,7 @@ def get_payroll_detail(employee_id: int, date_from: str, date_to: str) -> dict:
         day_logs   = logs_by_date.get(date_str, [])
         punch_ins  = [l for l in day_logs if l['punch_type'] == 'in']
         punch_outs = [l for l in day_logs if l['punch_type'] == 'out']
-        first_in   = punch_ins[0]  if punch_ins  else None
+        first_in   = punch_ins[0]   if punch_ins  else None
         last_out   = punch_outs[-1] if punch_outs else None
 
         status       = 'Holiday' if is_holiday else ('Present' if first_in else 'Absent')
@@ -587,31 +632,25 @@ def get_payroll_overview(date_from: str, date_to: str) -> list:
         detail = get_payroll_detail(emp['id'], date_from, date_to)
         if not detail or not detail.get('daily_records'):
             overview.append({
-                'employee_id':     emp['id'],
-                'employee_code':   emp['employee_code'],
-                'full_name':       emp['full_name'],
-                'department':      emp.get('department'),
-                'working_days':    0, 'present': 0, 'absent': 0, 'holidays': 0,
-                'late_days':       0, 'total_late_mins': 0, 'total_deduction': 0,
-                'deduction_rate':  float(emp.get('late_deduction_per_minute') or 0),
-                'no_roster':       True,
+                'employee_id':   emp['id'],   'employee_code': emp['employee_code'],
+                'full_name':     emp['full_name'], 'department': emp.get('department'),
+                'working_days':  0, 'present': 0, 'absent': 0, 'holidays': 0,
+                'late_days':     0, 'total_late_mins': 0, 'total_deduction': 0,
+                'deduction_rate': float(emp.get('late_deduction_per_minute') or 0),
+                'no_roster': True,
             })
         else:
             overview.append({
-                'employee_id':     emp['id'],
-                'employee_code':   emp['employee_code'],
-                'full_name':       emp['full_name'],
-                'department':      emp.get('department') or '',
+                'employee_id':     emp['id'],   'employee_code':  emp['employee_code'],
+                'full_name':       emp['full_name'], 'department': emp.get('department') or '',
                 'monthly_salary':  float(emp.get('monthly_salary') or 0),
                 'weekly_off_day':  int(emp.get('weekly_off_day') or 6),
-                'working_days':    detail['working_days'],
-                'present':         detail['present'],
-                'absent':          detail['absent'],
-                'holidays':        detail['holidays'],
+                'working_days':    detail['working_days'], 'present':   detail['present'],
+                'absent':          detail['absent'],        'holidays':  detail['holidays'],
                 'late_days':       detail['late_days'],
                 'total_late_mins': detail['total_late_mins'],
                 'total_deduction': detail['total_deduction'],
                 'deduction_rate':  detail['deduction_rate'],
-                'no_roster':       False,
+                'no_roster': False,
             })
     return sorted(overview, key=lambda x: x['full_name'])
