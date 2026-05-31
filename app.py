@@ -64,18 +64,21 @@ def create_app() -> Flask:
     # Diagnostic endpoint — no auth
     @app.route('/health')
     def health():
+        import os
         from flask import jsonify
         db_error = None
         try:
             db._get('app_users', 'id', limit=1)
         except Exception as e:
             db_error = str(e)
+        supabase_keys = [k for k in os.environ if 'SUPA' in k.upper() or 'supabase' in k.lower()]
         return jsonify({
             'status': 'ok' if db_error is None else 'db_error',
             'supabase_url': Config.SUPABASE_URL[:40] + '...' if len(Config.SUPABASE_URL) > 40 else Config.SUPABASE_URL,
             'service_key_set': bool(Config.SUPABASE_SERVICE_KEY),
             'app_root': Config.APPLICATION_ROOT,
             'db_error': db_error,
+            'env_keys_with_supa': supabase_keys,
         })
 
     # Shutdown device cleanly on app teardown
