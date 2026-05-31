@@ -119,6 +119,10 @@
 {% endblock %}
 {% block scripts %}
 <script>
+const API = {
+  assign:     '{{ url_for("roster.assign") }}',
+  listRosters:'{{ url_for("roster.list_rosters") }}'
+};
 const SHIFTS = [
   {% for s in shifts %}
   {id: {{ s.id }}, name: "{{ s.shift_name }}", start: "{{ s.shift_start }}", end: "{{ s.shift_end }}"},
@@ -255,7 +259,7 @@ async function saveRoster() {
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving…';
   status.innerHTML = '';
 
-  const resp = await fetch('/roster/assign', {
+  const resp = await fetch(API.assign, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({employee_id: parseInt(empId), entries, notes}),
@@ -267,7 +271,7 @@ async function saveRoster() {
 
   if (data.success) {
     status.innerHTML = `<span class="text-success"><i class="bi bi-check2 me-1"></i>${data.saved} days saved</span>`;
-    setTimeout(() => { window.location = '/roster/'; }, 1200);
+    setTimeout(() => { window.location = API.listRosters; }, 1200);
   } else {
     status.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>${data.error}</span>`;
   }

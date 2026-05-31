@@ -210,6 +210,7 @@
 {% block scripts %}
 <script>
 document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+const API = { editPunch: '{{ url_for("attendance.api_edit_punch") }}' };
 
 {% if is_super_admin %}
 let editLogId = null;
@@ -232,7 +233,7 @@ async function savePunchEdit() {
 
   if (!newTime) { errDiv.textContent = 'Please select a time'; errDiv.classList.remove('d-none'); return; }
 
-  const resp = await fetch('/attendance/api/edit-punch', {
+  const resp = await fetch(API.editPunch, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({log_id: editLogId, punch_time: newTime}),

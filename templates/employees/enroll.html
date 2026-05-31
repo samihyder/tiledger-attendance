@@ -195,6 +195,12 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
+const API = {
+  enrollFinger: '{{ url_for("employees.api_enroll_finger") }}',
+  deleteFinger: '{{ url_for("employees.api_delete_finger") }}',
+  enrollFace:   '{{ url_for("employees.api_enroll_face") }}',
+  deleteFace:   '{{ url_for("employees.api_delete_face") }}'
+};
 const enrollModal = new bootstrap.Modal(document.getElementById('enrollModal'));
 
 async function enrollFinger(empId, fingerIdx, fingerLabel) {
@@ -205,7 +211,7 @@ async function enrollFinger(empId, fingerIdx, fingerLabel) {
   enrollModal.show();
 
   try {
-    const resp = await fetch('/employees/api/enroll-finger', {
+    const resp = await fetch(API.enrollFinger, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({employee_id: empId, finger_index: fingerIdx}),
@@ -233,7 +239,7 @@ async function enrollFinger(empId, fingerIdx, fingerLabel) {
 
 async function deleteFinger(empId, fingerIdx, fingerLabel) {
   if (!confirm(`Remove ${fingerLabel} template for this employee?`)) return;
-  await fetch('/employees/api/delete-finger', {
+  await fetch(API.deleteFinger, {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({employee_id: empId, finger_index: fingerIdx}),
@@ -389,7 +395,7 @@ async function enrollFace(empId) {
   status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Enrolling…</span>';
 
   try {
-    const resp = await fetch('/employees/api/enroll-face', {
+    const resp = await fetch(API.enrollFace, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ employee_id: empId, embeddings }),
@@ -414,7 +420,7 @@ async function enrollFace(empId) {
 
 async function deleteFaceTemplate(empId) {
   if (!confirm('Remove face template for this employee?')) return;
-  await fetch('/employees/api/delete-face', {
+  await fetch(API.deleteFace, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({employee_id: empId}),

@@ -126,7 +126,11 @@ def _norm_log(row: dict) -> dict:
 # ── Init / seed ───────────────────────────────────────────────────────────────
 
 def init_db():
-    """Seed default admin user and shift on first run. Non-fatal."""
+    """Seed default admin user and shift on first run. Non-fatal.
+    Skipped on Vercel — schema_supabase.sql already seeds the defaults."""
+    import os
+    if os.environ.get('VERCEL'):
+        return
     try:
         if not _one('app_users', 'id', [('username', 'eq.admin')]):
             _insert('app_users', {
@@ -627,30 +631,83 @@ def get_payroll_detail(employee_id: int, date_from: str, date_to: str) -> dict:
 
 
 def get_payroll_overview(date_from: str, date_to: str) -> list:
+    employees = get_employees(active_only=True)
+    if not employees:
+        return []
+
+    # 3 bulk queries instead of 1 + N*3
+    roster_rows = _get('rosters',
+                       'employee_id,roster_date,is_holiday',
+                       [('roster_date', f'gte.{date_from}'),
+                        ('roster_date', f'lte.{date_to}')],
+                       order='roster_date')
+    rosters_by_emp = defaultdict(list)
+    for r in roster_rows:
+        rosters_by_emp[r['employee_id']].append(r)
+
+    log_rows = _get('attendance_logs',
+                    'employee_id,punch_type,punch_time,minutes_late',
+                    [('punch_time', f'gte.{date_from}T00:00:00'),
+                     ('punch_time', f'lte.{date_to}T23:59:59')],
+                    order='punch_time')
+    logs_by_emp = defaultdict(list)
+    for log in log_rows:
+        log['punch_time'] = _nt(log['punch_time'])
+        logs_by_emp[log['employee_id']].append(log)
+
     overview = []
-    for emp in get_employees(active_only=True):
-        detail = get_payroll_detail(emp['id'], date_from, date_to)
-        if not detail or not detail.get('daily_records'):
+    for emp in employees:
+        emp_id   = emp['id']
+        rate     = float(emp.get('late_deduction_per_minute') or 0)
+        rosters  = rosters_by_emp.get(emp_id, [])
+        emp_logs = logs_by_emp.get(emp_id, [])
+
+        if not rosters:
             overview.append({
-                'employee_id':   emp['id'],   'employee_code': emp['employee_code'],
+                'employee_id':   emp_id, 'employee_code': emp['employee_code'],
                 'full_name':     emp['full_name'], 'department': emp.get('department'),
                 'working_days':  0, 'present': 0, 'absent': 0, 'holidays': 0,
                 'late_days':     0, 'total_late_mins': 0, 'total_deduction': 0,
-                'deduction_rate': float(emp.get('late_deduction_per_minute') or 0),
-                'no_roster': True,
+                'deduction_rate': rate, 'no_roster': True,
             })
-        else:
-            overview.append({
-                'employee_id':     emp['id'],   'employee_code':  emp['employee_code'],
-                'full_name':       emp['full_name'], 'department': emp.get('department') or '',
-                'monthly_salary':  float(emp.get('monthly_salary') or 0),
-                'weekly_off_day':  int(emp.get('weekly_off_day') or 6),
-                'working_days':    detail['working_days'], 'present':   detail['present'],
-                'absent':          detail['absent'],        'holidays':  detail['holidays'],
-                'late_days':       detail['late_days'],
-                'total_late_mins': detail['total_late_mins'],
-                'total_deduction': detail['total_deduction'],
-                'deduction_rate':  detail['deduction_rate'],
-                'no_roster': False,
-            })
+            continue
+
+        logs_by_date = defaultdict(list)
+        for log in emp_logs:
+            logs_by_date[log['punch_time'][:10]].append(log)
+
+        working_days = present = absent = holidays = late_days = 0
+        total_late_mins = 0
+        total_deduction = 0.0
+
+        for roster in rosters:
+            is_holiday = bool(roster.get('is_holiday'))
+            punch_ins  = [l for l in logs_by_date.get(roster['roster_date'], [])
+                          if l['punch_type'] == 'in']
+            if is_holiday:
+                holidays += 1
+            else:
+                working_days += 1
+                if punch_ins:
+                    present += 1
+                    mins = int(punch_ins[0].get('minutes_late') or 0)
+                    if mins > 0:
+                        late_days      += 1
+                        total_late_mins += mins
+                        total_deduction += mins * rate
+                else:
+                    absent += 1
+
+        overview.append({
+            'employee_id':     emp_id, 'employee_code':  emp['employee_code'],
+            'full_name':       emp['full_name'], 'department': emp.get('department') or '',
+            'monthly_salary':  float(emp.get('monthly_salary') or 0),
+            'weekly_off_day':  int(emp.get('weekly_off_day') or 6),
+            'working_days':    working_days, 'present':         present,
+            'absent':          absent,        'holidays':        holidays,
+            'late_days':       late_days,     'total_late_mins': total_late_mins,
+            'total_deduction': round(total_deduction, 2),
+            'deduction_rate':  rate, 'no_roster': False,
+        })
+
     return sorted(overview, key=lambda x: x['full_name'])

@@ -215,6 +215,12 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
+const API = {
+  biometricPunch:  '{{ url_for("attendance.api_biometric_punch") }}',
+  facePunch:       '{{ url_for("attendance.api_face_punch") }}',
+  manualPunch:     '{{ url_for("attendance.api_manual_punch") }}',
+  toggleManualMode:'{{ url_for("attendance.api_toggle_manual_mode") }}'
+};
 // ── Clock ──────────────────────────────────────────────────────────────────
 function updateClock() {
   const now = new Date();
@@ -312,7 +318,7 @@ async function startScan() {
   icon.innerHTML = '<i class="bi bi-fingerprint" style="font-size:6rem;color:#ffc107;animation:pulse 1s infinite"></i>';
 
   try {
-    const resp = await fetch('/attendance/api/biometric-punch', {method:'POST'});
+    const resp = await fetch(API.biometricPunch, {method:'POST'});
     const data = await resp.json();
     if (data.success) {
       icon.innerHTML = '<i class="bi bi-check-circle-fill" style="font-size:6rem;color:#198754"></i>';
@@ -439,7 +445,7 @@ async function startFaceScan() {
     status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Matching…</span>';
     const embedding = Array.from(det.descriptor);
 
-    const resp = await fetch('/attendance/api/face-punch', {
+    const resp = await fetch(API.facePunch, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ embedding }),
     });
@@ -471,7 +477,7 @@ async function submitManualPunch() {
   const btn = document.querySelector('button[onclick="submitManualPunch()"]');
   btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Recording…';
   try {
-    const resp = await fetch('/attendance/api/manual-punch', {
+    const resp = await fetch(API.manualPunch, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({employee_id: parseInt(id)}),
     });
@@ -493,7 +499,7 @@ document.getElementById('modal-password')?.addEventListener('keydown', e=>{ if(e
 async function activateManualMode() {
   const pw  = document.getElementById('modal-password').value;
   const err = document.getElementById('modal-error');
-  const resp = await fetch('/attendance/api/toggle-manual-mode',{
+  const resp = await fetch(API.toggleManualMode,{
     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw}),
   });
   const data = await resp.json();
@@ -502,7 +508,7 @@ async function activateManualMode() {
 }
 async function disableManualMode() {
   if(!confirm('Switch back to biometric mode?')) return;
-  const resp = await fetch('/attendance/api/toggle-manual-mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  const resp = await fetch(API.toggleManualMode,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
   const data = await resp.json();
   if(data.success) window.location.reload();
 }
