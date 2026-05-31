@@ -9,6 +9,7 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
+from collections import defaultdict
 from datetime import datetime
 from config import Config
 
@@ -574,7 +575,6 @@ def get_payroll_detail(employee_id: int, date_from: str, date_to: str) -> dict:
                     order='punch_time')
     logs = [_norm_log(r) for r in log_rows]
 
-    from collections import defaultdict
     logs_by_date = defaultdict(list)
     for log in logs:
         logs_by_date[log['punch_time'][:10]].append(log)
