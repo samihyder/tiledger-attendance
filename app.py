@@ -61,6 +61,20 @@ def create_app() -> Flask:
 
     register_blueprints(app)
 
+    # Diagnostic endpoint — no auth, no DB
+    @app.route('/health')
+    def health():
+        from flask import jsonify
+        return jsonify({
+            'status': 'ok',
+            'supabase_url_set': bool(Config.SUPABASE_URL),
+            'service_key_set': bool(Config.SUPABASE_SERVICE_KEY),
+            'app_root': Config.APPLICATION_ROOT,
+        })
+
+    # Propagate exceptions so Vercel logs show full tracebacks
+    app.config['PROPAGATE_EXCEPTIONS'] = True
+
     # Shutdown device cleanly on app teardown
     import atexit
     atexit.register(bio.close_device)
