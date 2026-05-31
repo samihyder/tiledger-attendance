@@ -15,7 +15,12 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
 
-        user = db.get_user(username)
+        try:
+            user = db.get_user(username)
+        except Exception:
+            flash('Database unavailable — check Supabase settings.', 'danger')
+            return render_template('login.html')
+
         if user and db.verify_password(password, user['password_hash']):
             session.permanent = True
             session['user_id']   = user['id']

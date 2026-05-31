@@ -72,9 +72,6 @@ def create_app() -> Flask:
             'app_root': Config.APPLICATION_ROOT,
         })
 
-    # Propagate exceptions so Vercel logs show full tracebacks
-    app.config['PROPAGATE_EXCEPTIONS'] = True
-
     # Shutdown device cleanly on app teardown
     import atexit
     atexit.register(bio.close_device)
