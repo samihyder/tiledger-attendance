@@ -213,6 +213,7 @@
 
 {% endblock %}
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
 // ── Clock ──────────────────────────────────────────────────────────────────
 function updateClock() {
@@ -333,12 +334,41 @@ function resetBio() {
     '<i class="bi bi-fingerprint" style="font-size:6rem;color:#0d6efd;opacity:0.85"></i>';
 }
 
+// ── face-api.js setup ──────────────────────────────────────────────────────
+const FACE_MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+let faceApiReady = false;
+
+async function loadFaceModels() {
+  if (faceApiReady) return true;
+  document.getElementById('face-status').innerHTML =
+    '<span class="text-muted"><i class="bi bi-hourglass me-1"></i>Loading face models…</span>';
+  try {
+    await faceapi.nets.ssdMobilenetv1.loadFromUri(FACE_MODEL_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODEL_URL);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODEL_URL);
+    faceApiReady = true;
+    return true;
+  } catch(e) {
+    document.getElementById('face-status').innerHTML =
+      `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Model load failed: ${e.message}</span>`;
+    return false;
+  }
+}
+
 // ── Face recognition ───────────────────────────────────────────────────────
 async function startFaceCam() {
-  const btn   = document.getElementById('btn-start-face-cam');
+  const btn = document.getElementById('btn-start-face-cam');
   const video = document.getElementById('face-video');
   const ph    = document.getElementById('face-placeholder');
   btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Loading…';
+
+  if (!await loadFaceModels()) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-camera-video me-2"></i>Activate Camera';
+    return;
+  }
+
   try {
     faceStream = await navigator.mediaDevices.getUserMedia({
       video: { width: 640, height: 480, facingMode: 'user' }
@@ -350,25 +380,23 @@ async function startFaceCam() {
     document.getElementById('btn-face-scan').classList.remove('d-none');
     document.getElementById('face-status').innerHTML =
       '<i class="bi bi-circle-fill text-success me-1" style="font-size:0.5rem"></i>Camera active';
-    // Periodic liveness preview
     livenessTimer = setInterval(updateLivenessBar, 2000);
   } catch(e) {
     document.getElementById('face-status').innerHTML =
       `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>${e.message}</span>`;
     btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-camera-video me-2"></i>Activate Camera';
   }
 }
 
 async function updateLivenessBar() {
-  const f = captureFrame();
-  if (!f) return;
+  const video = document.getElementById('face-video');
+  if (!video.videoWidth || !faceApiReady) return;
   try {
-    const resp = await fetch('/employees/api/liveness-check', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({image: f}),
-    });
-    const data = await resp.json();
-    const score = data.score || 0;
+    const det = await faceapi.detectSingleFace(
+      video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 })
+    );
+    const score = det ? Math.round(det.score * 100) : 0;
     document.getElementById('liveness-bar').classList.remove('d-none');
     document.getElementById('liveness-fill').style.width = score + '%';
     document.getElementById('liveness-fill').className =
@@ -377,68 +405,46 @@ async function updateLivenessBar() {
   } catch {}
 }
 
-function captureFrame() {
-  const video  = document.getElementById('face-video');
-  const canvas = document.getElementById('face-canvas');
-  if (!video.videoWidth) return null;
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
-
 async function startFaceScan() {
-  const btn     = document.getElementById('btn-face-scan');
-  const status  = document.getElementById('face-status');
-  const blink   = document.getElementById('blink-challenge');
+  const btn    = document.getElementById('btn-face-scan');
+  const status = document.getElementById('face-status');
   clearInterval(livenessTimer);
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Identifying…';
 
-  // ── Active liveness: collect frames for blink detection ──
-  status.innerHTML = '<span class="text-primary"><i class="bi bi-eye me-1"></i>Checking liveness…</span>';
-  blink.classList.remove('d-none');
-
-  const frames = [];
-  for (let i = 0; i < 6; i++) {
-    await new Promise(r => setTimeout(r, 250));
-    const f = captureFrame();
-    if (f) frames.push(f);
-    document.getElementById('blink-countdown').textContent = `${i+1}/6`;
-  }
-  blink.classList.add('d-none');
-
-  // Check blink
-  let blinkOk = true;  // default true for mock mode
-  try {
-    const blinkResp = await fetch('/attendance/api/blink-check', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({frames}),
-    });
-    const blinkData = await blinkResp.json();
-    blinkOk = blinkData.blink_detected !== false;
-    if (!blinkOk) {
-      status.innerHTML = `<span class="text-danger"><i class="bi bi-eye-slash me-1"></i>${blinkData.reason || 'No blink detected'}</span>`;
-      // Still proceed — passive anti-spoofing handles this too
-    }
-  } catch {}
-
-  // ── Identify ──
-  status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Matching face…</span>';
-  const frame = captureFrame();
-  if (!frame) {
-    showError('Camera frame empty — try again');
+  const video = document.getElementById('face-video');
+  if (!video.videoWidth) {
+    showError('Camera not ready — try again');
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Identify Face';
-    livenessTimer = setInterval(updateLivenessBar, 2000);
     return;
   }
 
+  status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Detecting face…</span>';
+
   try {
+    const det = await faceapi
+      .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!det) {
+      status.innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>No face detected — look at the camera</span>';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Identify Face';
+      livenessTimer = setInterval(updateLivenessBar, 2000);
+      return;
+    }
+
+    status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Matching…</span>';
+    const embedding = Array.from(det.descriptor);
+
     const resp = await fetch('/attendance/api/face-punch', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({image: frame}),
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ embedding }),
     });
     const data = await resp.json();
+
     if (data.success) {
       data.punch_method = 'face';
       showResult(data);
@@ -447,7 +453,10 @@ async function startFaceScan() {
       status.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${data.error}</span>`;
       showError(data.error);
     }
-  } catch(e) { showError(`Error: ${e.message}`); }
+  } catch(e) {
+    showError(`Error: ${e.message}`);
+    status.innerHTML = `<span class="text-danger">${e.message}</span>`;
+  }
 
   btn.disabled = false;
   btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Identify Face';

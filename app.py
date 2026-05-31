@@ -37,20 +37,8 @@ def create_app() -> Flask:
         try: return _date.fromisoformat(s).weekday()   # 0=Mon … 6=Sun
         except: return -1
 
-    # Initialise DB lazily on first request — NOT at import time.
-    # Calling it at startup crashes Vercel serverless functions because the
-    # PostgreSQL connection attempt happens before the function is ready.
-    _db_ready = False
-
-    @app.before_request
-    def _lazy_init_db():
-        nonlocal _db_ready
-        if not _db_ready:
-            try:
-                db.init_db()
-            except Exception as e:
-                app.logger.warning(f'DB init skipped: {e}')
-            _db_ready = True
+    # Initialise DB (creates tables + seeds defaults if fresh install)
+    db.init_db()
 
     # Open biometric device at startup
     try:
@@ -69,8 +57,10 @@ def create_app() -> Flask:
     return app
 
 
+# Expose app at module level for Vercel / WSGI
+app = create_app()
+
 if __name__ == '__main__':
-    app = create_app()
     print(f'\n  TiLedger Attendance System')
     print(f'  URL  : http://{Config.HOST}:{Config.PORT}')
     print(f'  Login: admin / admin@2026  (change immediately)\n')

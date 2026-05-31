@@ -1,6 +1,2 @@
-# Vercel / cloud deployment
-# numpy and Pillow are NOT included — face recognition is auto-mocked on Vercel
-# (no camera hardware). For local punch station use requirements-local.txt
-
 flask>=3.0.3
-psycopg2-binary>=2.9.9
+supabase>=2.0.0

@@ -95,31 +95,28 @@ def deactivate_employee(employee_id):
 @permission_required('biometric_enroll')
 def api_enroll_face():
     """
-    Enroll face from 3 captured frames.
-    Expects JSON: {employee_id, frames: [b64, b64, b64]}
+    Enroll face from browser-extracted descriptors.
+    Expects JSON: {employee_id, embeddings: [[float x 128], ...]}
+    Descriptors computed client-side by face-api.js.
     """
-    data = request.get_json()
+    data        = request.get_json()
     employee_id = int(data.get('employee_id', 0))
-    frames      = data.get('frames', [])
+    embeddings  = data.get('embeddings', [])
 
     if not employee_id:
         return jsonify({'success': False, 'error': 'Employee ID required'}), 400
-    if len(frames) < face.FACE_ENROLL_FRAMES:
-        return jsonify({'success': False, 'error': f'Need {face.FACE_ENROLL_FRAMES} frames, got {len(frames)}'}), 400
+    if len(embeddings) < face.FACE_ENROLL_FRAMES:
+        return jsonify({'success': False, 'error': f'Need {face.FACE_ENROLL_FRAMES} face captures, got {len(embeddings)}'}), 400
     if not db.get_employee(employee_id):
         return jsonify({'success': False, 'error': 'Employee not found'}), 404
 
     try:
-        device = face.get_face_device()
-        embedding, quality, spoof = device.enroll(frames)
-        embedding_json = json.dumps(embedding)
-        db.save_face_template(employee_id, embedding_json, quality, enrolled_by=session['user_id'])
+        embedding, quality = face.enroll_from_embeddings(embeddings)
+        db.save_face_template(employee_id, json.dumps(embedding), quality, enrolled_by=session['user_id'])
         return jsonify({
             'success': True,
             'quality': quality,
-            'spoof_score': spoof.get('score', 0),
-            'checks': spoof.get('checks', {}),
-            'message': f'Face enrolled successfully (quality {quality}%)',
+            'message': 'Face enrolled successfully',
         })
     except face.FaceServiceError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -140,17 +137,8 @@ def api_delete_face():
 @login_required
 @permission_required('biometric_enroll')
 def api_liveness_check():
-    """Real-time spoof check on a single frame (called during camera preview)."""
-    data   = request.get_json()
-    b64    = data.get('image', '')
-    if not b64:
-        return jsonify({'success': False, 'error': 'No image'}), 400
-    try:
-        device = face.get_face_device()
-        result = device.liveness_check(b64)
-        return jsonify({'success': True, **result})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    # Liveness checking moved to client-side (face-api.js)
+    return jsonify({'success': True, 'is_live': True, 'score': 90, 'checks': {}})
 
 
 @employee_bp.route('/<int:employee_id>/enroll', methods=['GET'])

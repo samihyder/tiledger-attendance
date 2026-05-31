@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 RBAC helpers and session management.
 

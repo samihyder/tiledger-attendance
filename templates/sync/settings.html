@@ -39,151 +39,163 @@
     </div>
 
     <!-- Masked summary -->
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm mb-3">
       <div class="card-header bg-white border-0 pt-3">
-        <h6 class="fw-bold mb-0 text-muted">Current Configuration (masked)</h6>
+        <h6 class="fw-bold mb-0 text-muted">
+          <i class="bi bi-database me-1"></i>Attendance DB (DB 1) — masked
+        </h6>
       </div>
       <div class="card-body">
         <dl class="row mb-0 small">
-          <dt class="col-sm-4 text-muted">Supabase Project URL</dt>
+          <dt class="col-sm-4 text-muted">Project URL</dt>
           <dd class="col-sm-8 font-monospace">
-            {% if settings.url %}
-              {{ settings.url[:12] }}{{ '•' * 20 }}
+            {% if settings.url %}{{ settings.url[:20] }}{{ '•' * 16 }}
             {% else %}<span class="text-danger">Not configured</span>{% endif %}
           </dd>
-
           <dt class="col-sm-4 text-muted">Service Role Key</dt>
           <dd class="col-sm-8">
-            {% if settings.has_key %}
-              <span class="text-success"><i class="bi bi-check-circle me-1"></i>Stored (encrypted)</span>
+            {% if settings.has_key %}<span class="text-success"><i class="bi bi-check-circle me-1"></i>Stored (encrypted)</span>
             {% else %}<span class="text-danger">Not configured</span>{% endif %}
           </dd>
+          <dt class="col-sm-4 text-muted">Table</dt>
+          <dd class="col-sm-8 font-monospace">{{ settings.table or '—' }}</dd>
+        </dl>
+      </div>
+    </div>
 
-          <dt class="col-sm-4 text-muted">Table Name</dt>
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-0 pt-3">
+        <h6 class="fw-bold mb-0 text-muted">
+          <i class="bi bi-database-fill-gear me-1"></i>ERP DB (DB 2) — masked
+        </h6>
+      </div>
+      <div class="card-body">
+        <dl class="row mb-0 small">
+          <dt class="col-sm-4 text-muted">Project URL</dt>
           <dd class="col-sm-8 font-monospace">
-            {{ settings.table or '<span class="text-danger">Not set</span>' }}
+            {% if erp_settings.url %}{{ erp_settings.url[:20] }}{{ '•' * 16 }}
+            {% else %}<span class="text-warning">Not configured — ERP sync disabled</span>{% endif %}
+          </dd>
+          <dt class="col-sm-4 text-muted">Service Role Key</dt>
+          <dd class="col-sm-8">
+            {% if erp_settings.has_key %}<span class="text-success"><i class="bi bi-check-circle me-1"></i>Stored (encrypted)</span>
+            {% else %}<span class="text-warning">Not configured</span>{% endif %}
           </dd>
         </dl>
       </div>
     </div>
 
     {% else %}
-    <!-- ── Unlocked: edit form ──────────────────────────────────────────── -->
+    <!-- ── Unlocked: lock button (shared) ─────────────────────────────── -->
+    <div class="d-flex justify-content-end mb-3">
+      <form method="POST" action="{{ url_for('sync.sync_settings') }}" class="mb-0">
+        <input type="hidden" name="action" value="lock">
+        <button type="submit" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-lock me-1"></i>Lock Settings
+        </button>
+      </form>
+    </div>
+
+    <!-- ── DB 1: Attendance Supabase ───────────────────────────────────── -->
     <div class="card border-0 shadow-sm border-success mb-4">
-      <div class="card-header bg-success bg-opacity-10 border-0 pt-3 d-flex justify-content-between align-items-center">
+      <div class="card-header bg-success bg-opacity-10 border-0 pt-3">
         <h6 class="fw-bold mb-0 text-success">
-          <i class="bi bi-pencil me-1"></i>Edit Supabase Connection
+          <i class="bi bi-database me-1"></i>Attendance DB (DB 1)
+          <span class="text-muted fw-normal small ms-2">Primary — stores all attendance data</span>
         </h6>
-        <form method="POST" action="{{ url_for('sync.sync_settings') }}" class="mb-0">
-          <input type="hidden" name="action" value="lock">
-          <button type="submit" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-lock me-1"></i>Lock
-          </button>
-        </form>
       </div>
       <div class="card-body">
         <form method="POST" action="{{ url_for('sync.sync_settings') }}">
           <input type="hidden" name="action" value="save">
 
-          <!-- Project URL -->
-          <div class="mb-4">
-            <label class="form-label fw-semibold">
-              Supabase Project URL
-            </label>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Project URL</label>
             <input type="url" name="supabase_url" class="form-control font-monospace"
-                   value="{{ settings.url }}"
-                   placeholder="https://xxxxxxxxxxxx.supabase.co" required>
-            <div class="form-text">
-              Found in Supabase Dashboard → Project Settings → API → Project URL.
-            </div>
+                   value="{{ settings.url }}" placeholder="https://xxxxxxxxxxxx.supabase.co" required>
+            <div class="form-text">Settings → API → Project URL</div>
           </div>
 
-          <!-- Service Role Key -->
-          <div class="mb-4">
+          <div class="mb-3">
             <label class="form-label fw-semibold">
               Service Role Key
               <span class="badge bg-warning text-dark ms-1 small">Encrypted at rest</span>
             </label>
             <div class="input-group">
               <input type="password" id="keyInput" name="supabase_key"
-                     class="form-control font-monospace"
-                     value="{{ settings.api_key }}"
-                     placeholder="{% if settings.has_key %}Leave blank to keep existing key{% else %}eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...{% endif %}">
+                     class="form-control font-monospace" value="{{ settings.api_key }}"
+                     placeholder="{% if settings.has_key %}Leave blank to keep existing{% else %}eyJ...{% endif %}">
               <button type="button" class="btn btn-outline-secondary"
-                      onclick="toggleReveal('keyInput', this)" title="Show / hide key">
-                <i class="bi bi-eye"></i>
-              </button>
+                      onclick="toggleReveal('keyInput', this)"><i class="bi bi-eye"></i></button>
             </div>
-            <div class="form-text">
-              Found in Supabase Dashboard → Project Settings → API → <strong>service_role</strong> (secret).
-              Use the service role key — it bypasses Row Level Security for server-to-server writes.
-              {% if settings.has_key %}
-                Leave blank to keep the existing stored key.
-              {% endif %}
-            </div>
+            {% if settings.has_key %}<div class="form-text">Leave blank to keep the existing key.</div>{% endif %}
           </div>
 
-          <!-- Table Name -->
-          <div class="mb-4">
+          <div class="mb-3">
             <label class="form-label fw-semibold">Table Name</label>
             <input type="text" name="supabase_table" class="form-control font-monospace"
                    value="{{ settings.table }}" placeholder="attendance_daily" required>
-            <div class="form-text">
-              The Supabase table that receives daily attendance records.
-              See the required schema below.
-            </div>
           </div>
 
-          <hr>
-
-          <!-- Full URL preview -->
-          <div class="alert alert-light border small mb-4">
-            <div class="text-muted mb-1">Records will be posted to:</div>
-            <code id="urlPreview" class="text-primary">
-              {{ settings.url }}/rest/v1/{{ settings.table }}
-            </code>
+          <div class="alert alert-light border small mb-3">
+            <span class="text-muted">Endpoint: </span>
+            <code id="urlPreview" class="text-primary">{{ settings.url }}/rest/v1/{{ settings.table }}</code>
           </div>
 
-          <div class="d-flex justify-content-between align-items-center">
-            <div class="small text-muted">
-              <i class="bi bi-info-circle me-1"></i>
-              Saving locks the page — re-enter password to view again.
-            </div>
-            <button type="submit" class="btn btn-primary px-4">
-              <i class="bi bi-floppy me-1"></i>Save Settings
+          <div class="text-end">
+            <button type="submit" class="btn btn-success px-4">
+              <i class="bi bi-floppy me-1"></i>Save Attendance DB
             </button>
           </div>
         </form>
       </div>
     </div>
 
-    <!-- Required Supabase table schema -->
-    <div class="card border-0 shadow-sm mb-4">
-      <div class="card-header bg-white border-0 pt-3">
-        <h6 class="fw-bold mb-0">Required Supabase Table Schema</h6>
-        <div class="text-muted small">Run this SQL in your Supabase SQL Editor once.</div>
+    <!-- ── DB 2: ERP Supabase ──────────────────────────────────────────── -->
+    <div class="card border-0 shadow-sm border-primary mb-4">
+      <div class="card-header bg-primary bg-opacity-10 border-0 pt-3">
+        <h6 class="fw-bold mb-0 text-primary">
+          <i class="bi bi-database-fill-gear me-1"></i>ERP DB (DB 2) — kitchenosv2
+          <span class="text-muted fw-normal small ms-2">Optional — leave blank to disable ERP mirror</span>
+        </h6>
       </div>
-      <div class="card-body p-0">
-        <pre class="bg-dark text-light rounded-bottom p-3 mb-0" style="font-size:0.78rem"><code>CREATE TABLE IF NOT EXISTS attendance_daily (
-  id               BIGSERIAL PRIMARY KEY,
-  employee_code    TEXT        NOT NULL,
-  full_name        TEXT        NOT NULL,
-  department       TEXT,
-  designation      TEXT,
-  date             DATE        NOT NULL,
-  punch_in         TIME,
-  punch_out        TIME,
-  minutes_late     INTEGER     NOT NULL DEFAULT 0,
-  deduction_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
-  punch_source     TEXT,
-  override_reason  TEXT,
-  synced_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('sync.sync_settings') }}">
+          <input type="hidden" name="action" value="save_erp">
 
-  UNIQUE (employee_code, date)   -- required for upsert
-);
+          <div class="mb-3">
+            <label class="form-label fw-semibold">ERP Project URL</label>
+            <input type="url" name="erp_supabase_url" class="form-control font-monospace"
+                   value="{{ erp_settings.url }}" placeholder="https://xxxxxxxxxxxx.supabase.co">
+            <div class="form-text">The kitchenosv2 ERP Supabase project URL.</div>
+          </div>
 
--- Allow server-side inserts (service role bypasses RLS automatically)
-ALTER TABLE attendance_daily ENABLE ROW LEVEL SECURITY;</code></pre>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">
+              ERP Service Role Key
+              <span class="badge bg-warning text-dark ms-1 small">Encrypted at rest</span>
+            </label>
+            <div class="input-group">
+              <input type="password" id="erpKeyInput" name="erp_supabase_key"
+                     class="form-control font-monospace" value="{{ erp_settings.api_key }}"
+                     placeholder="{% if erp_settings.has_key %}Leave blank to keep existing{% else %}eyJ...{% endif %}">
+              <button type="button" class="btn btn-outline-secondary"
+                      onclick="toggleReveal('erpKeyInput', this)"><i class="bi bi-eye"></i></button>
+            </div>
+            {% if erp_settings.has_key %}<div class="form-text">Leave blank to keep the existing key.</div>{% endif %}
+          </div>
+
+          <div class="alert alert-info border-0 small mb-3">
+            <i class="bi bi-info-circle me-1"></i>
+            When configured, every sync will mirror <strong>employees, shifts, rosters, attendance logs,
+            and daily aggregates</strong> to the ERP DB automatically.
+          </div>
+
+          <div class="text-end">
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-floppy me-1"></i>Save ERP DB
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 

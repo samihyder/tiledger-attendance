@@ -80,13 +80,13 @@ def api_manual_punch():
 def api_face_punch():
     """
     Face identification + punch.
-    Expects JSON: {image: b64_string}
-    Runs anti-spoofing before identification.
+    Expects JSON: {embedding: [float x 128]}
+    Descriptor extracted client-side by face-api.js.
     """
-    data = request.get_json()
-    b64  = data.get('image', '')
-    if not b64:
-        return jsonify({'success': False, 'error': 'No image provided'}), 400
+    data      = request.get_json()
+    embedding = data.get('embedding', [])
+    if not embedding or len(embedding) != 128:
+        return jsonify({'success': False, 'error': 'Invalid face embedding from browser'}), 400
 
     templates = db.get_all_face_templates()
     if not templates:
@@ -99,10 +99,7 @@ def api_face_punch():
     ]
 
     try:
-        device = face.get_face_device()
-        matched = device.identify(b64, template_list)
-    except face.FaceServiceError as e:
-        return jsonify({'success': False, 'error': str(e), 'spoof': True}), 401
+        matched = face.identify(embedding, template_list)
     except Exception as e:
         return jsonify({'success': False, 'error': f'Face recognition error: {e}'}), 500
 
@@ -110,8 +107,7 @@ def api_face_punch():
         return jsonify({'success': False, 'error': 'Face not recognised — try again or use manual entry'}), 401
 
     result = logic.process_biometric_punch(matched['employee_id'])
-    result['confidence']  = matched.get('confidence', 0)
-    result['spoof_score'] = matched.get('spoof', {}).get('score', 0)
+    result['confidence']   = matched.get('confidence', 0)
     result['punch_method'] = 'face'
     return jsonify(result)
 
@@ -120,19 +116,8 @@ def api_face_punch():
 @login_required
 @permission_required('punch')
 def api_blink_check():
-    """
-    Active liveness: receive multiple frames, check for blink.
-    Expects JSON: {frames: [b64, b64, ...]}
-    """
-    data   = request.get_json()
-    frames = data.get('frames', [])
-    if len(frames) < 3:
-        return jsonify({'success': False, 'error': 'Need at least 3 frames for blink detection'}), 400
-    try:
-        result = face.check_blink(frames)
-        return jsonify({'success': True, **result})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    # Blink detection moved to client-side (face-api.js)
+    return jsonify({'success': True, 'blink_detected': True})
 
 
 @attendance_bp.route('/api/biometric-punch', methods=['POST'])
@@ -233,12 +218,7 @@ def api_edit_punch():
 
     db.edit_punch(log_id, new_time_db, edited_by=session['user_id'])
 
-    # Update minutes_late separately since edit_punch doesn't recalculate
-    with db.db() as conn:
-        conn.execute(
-            'UPDATE attendance_logs SET minutes_late=? WHERE id=?',
-            (minutes_late, log_id)
-        )
+    db.update_punch_minutes_late(log_id, minutes_late)
 
     return jsonify({
         'success': True,

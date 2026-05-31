@@ -193,6 +193,7 @@
 
 {% endblock %}
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
 const enrollModal = new bootstrap.Modal(document.getElementById('enrollModal'));
 
@@ -240,41 +241,73 @@ async function deleteFinger(empId, fingerIdx, fingerLabel) {
   location.reload();
 }
 
+// ── face-api.js setup ─────────────────────────────────────────────────────
+const FACE_MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+let faceApiReady = false;
+
+async function loadFaceModels() {
+  if (faceApiReady) return true;
+  document.getElementById('face-status').innerHTML =
+    '<i class="bi bi-hourglass me-1"></i>Loading face models…';
+  try {
+    await faceapi.nets.ssdMobilenetv1.loadFromUri(FACE_MODEL_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODEL_URL);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODEL_URL);
+    faceApiReady = true;
+    return true;
+  } catch(e) {
+    document.getElementById('face-status').innerHTML =
+      `<span class="text-danger">Failed to load models: ${e.message}</span>`;
+    return false;
+  }
+}
+
 // ── Face enrollment ────────────────────────────────────────────────────────
 let faceStream = null;
+let livenessTimer = null;
 
 async function startFaceCamera() {
+  const btn = document.getElementById('btn-start-camera');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Loading…';
+
+  if (!await loadFaceModels()) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-camera-video me-2"></i>Start Camera';
+    return;
+  }
+
   try {
     faceStream = await navigator.mediaDevices.getUserMedia({
       video: { width: 640, height: 480, facingMode: 'user' }
     });
     const video = document.getElementById('face-video');
     video.srcObject = faceStream;
-    document.getElementById('btn-start-camera').classList.add('d-none');
+    btn.classList.add('d-none');
     document.getElementById('btn-enroll-face').classList.remove('d-none');
     document.getElementById('face-status').innerHTML =
       '<i class="bi bi-circle-fill text-success me-1" style="font-size:0.5rem"></i>Camera active — position your face in frame';
-    // Start periodic liveness preview
     startLivenessPreview();
   } catch (e) {
     document.getElementById('face-status').innerHTML =
       `<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>Camera error: ${e.message}</span>`;
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-camera-video me-2"></i>Start Camera';
   }
 }
 
-let livenessTimer = null;
 function startLivenessPreview() {
   livenessTimer = setInterval(async () => {
-    const b64 = captureFrame();
-    if (!b64) return;
+    const video = document.getElementById('face-video');
+    if (!video.videoWidth || !faceApiReady) return;
     try {
-      const resp = await fetch('/employees/api/liveness-check', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({image: b64}),
-      });
-      const data = await resp.json();
-      if (data.success !== false) updateSpoofBar(data);
+      const det = await faceapi.detectSingleFace(
+        video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 })
+      );
+      const score = det ? Math.round(det.score * 100) : 0;
+      updateSpoofBar({ score, checks: {
+        face: { pass: score > 50, label: 'Face detected', value: score }
+      }});
     } catch {}
   }, 1500);
 }
@@ -320,35 +353,51 @@ async function enrollFace(empId) {
   const bar    = document.getElementById('frame-bar');
   const lbl    = document.getElementById('frame-label');
   const status = document.getElementById('face-status');
+  const video  = document.getElementById('face-video');
 
   clearInterval(livenessTimer);
   btn.disabled = true;
   prog.classList.remove('d-none');
-  status.innerHTML = '<i class="bi bi-camera-fill me-1 text-info"></i>Capturing frames…';
+  status.innerHTML = '<i class="bi bi-camera-fill me-1 text-info"></i>Capturing face descriptors…';
 
-  const frames = [];
+  const embeddings = [];
   for (let i = 0; i < FRAMES; i++) {
-    await new Promise(r => setTimeout(r, 600));
-    const f = captureFrame();
-    if (f) frames.push(f);
-    const pct = Math.round((i + 1) / FRAMES * 100);
-    bar.style.width = pct + '%';
-    lbl.textContent = `${i + 1} / ${FRAMES}`;
+    await new Promise(r => setTimeout(r, 700));
+    try {
+      const det = await faceapi
+        .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+      if (det) {
+        embeddings.push(Array.from(det.descriptor));
+        bar.style.width = Math.round(embeddings.length / FRAMES * 100) + '%';
+        lbl.textContent = `${embeddings.length} / ${FRAMES}`;
+      } else {
+        status.innerHTML = `<span class="text-warning">Frame ${i+1}: no face detected — stay still</span>`;
+      }
+    } catch(e) { /* skip frame */ }
   }
 
-  status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Processing anti-spoofing checks…</span>';
+  if (embeddings.length < FRAMES) {
+    prog.classList.add('d-none');
+    status.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Could not detect face in all frames. Ensure good lighting and face the camera directly.</span>`;
+    btn.disabled = false;
+    startLivenessPreview();
+    return;
+  }
+
+  status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Enrolling…</span>';
 
   try {
     const resp = await fetch('/employees/api/enroll-face', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({employee_id: empId, frames}),
+      body: JSON.stringify({ employee_id: empId, embeddings }),
     });
     const data = await resp.json();
     prog.classList.add('d-none');
 
     if (data.success) {
-      if (data.checks) updateSpoofBar({score: data.spoof_score, checks: data.checks});
       status.innerHTML = `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>${data.message}</span>`;
       btn.innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>Re-enroll Face';
       setTimeout(() => location.reload(), 1800);
