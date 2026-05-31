@@ -25,6 +25,7 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
     app.secret_key = Config.SECRET_KEY
+    app.url_map.strict_slashes = False  # accept /employees and /employees/ without redirect
 
     # Jinja2 globals
     app.jinja_env.globals['enumerate'] = enumerate
