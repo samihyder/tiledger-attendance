@@ -43,7 +43,7 @@ PERMISSIONS = {
     'export_attendance':   ['super_admin', 'manager'],
     'manual_attendance':   ['super_admin'],
     'roster':              ['super_admin', 'manager'],
-    'manage_employees':    ['super_admin', 'system_admin'],
+    'manage_employees':    ['super_admin', 'manager', 'system_admin'],
     'biometric_enroll':    ['super_admin', 'system_admin'],
     'sync':                ['super_admin', 'manager'],
     'view_payroll':        ['super_admin', 'manager'],
