@@ -2,26 +2,28 @@
 RBAC helpers and session management.
 
 Roles:
-  super_admin  — full access; manages users; can activate manual override
-  manager      — all features except manual entry; manual entry requires override password
+  super_admin  — full access
+  manager      — all features except: shifts, payroll, sync to ERP, manual entry, data cleanup
   system_admin — employee registration, biometric enrollment, device settings
-  store        — punch in/out and sync to ERP only; manual entry via override password (emergency)
+  store        — punch in/out, sync to ERP; manual entry via override password (emergency)
+  cashier      — punch in/out only
 
 Permission matrix:
-  Feature                  super_admin  manager  system_admin  store
-  ────────────────────────────────────────────────────────────────────
-  View dashboard           ✓            ✓         ✓             ✓
-  Punch screen             ✓            ✓         ✓             ✓
-  View attendance logs     ✓            ✓         ✓             ✗
-  Export attendance        ✓            ✓         ✗             ✗
-  Manual attendance        ✓            override  ✗             override
-  Roster CRUD              ✓            ✓         ✗             ✗
-  Employee CRUD            ✓            ✗         ✓             ✗
-  Biometric enrollment     ✓            ✗         ✓             ✗
-  Sync to ERP              ✓            ✓         ✗             ✓
-  View payroll             ✓            ✓         ✗             ✗
-  Manage app users         ✓            ✗         ✗             ✗
-  System settings          ✓            ✗         ✗             ✗
+  Feature                  super_admin  manager  system_admin  store  cashier
+  ─────────────────────────────────────────────────────────────────────────────
+  View dashboard           ✓            ✓         ✓             ✓      ✓
+  Punch screen             ✓            ✓         ✓             ✓      ✓
+  View attendance logs     ✓            ✓         ✓             ✗      ✗
+  Export attendance        ✓            ✓         ✗             ✗      ✗
+  Manual attendance        ✓            ✗         ✗             override ✗
+  Roster view/assign       ✓            ✓         ✗             ✗      ✗
+  Manage shifts (CRUD)     ✓            ✗         ✗             ✗      ✗
+  Employee CRUD            ✓            ✓         ✓             ✗      ✗
+  Biometric enrollment     ✓            ✓         ✓             ✗      ✗
+  Sync to ERP              ✓            ✗         ✗             ✓      ✗
+  View payroll             ✓            ✗         ✗             ✗      ✗
+  Manage app users         ✓            ✓         ✗             ✗      ✗
+  System settings          ✓            ✗         ✗             ✗      ✗
 
   "override" = super admin password required at runtime
 """
@@ -30,30 +32,32 @@ from functools import wraps
 from flask import session, redirect, url_for, flash, request
 
 ROLE_HIERARCHY = {
-    'super_admin':  3,
-    'manager':      2,
-    'system_admin': 1,
-    'store':        0,
+    'super_admin':  4,
+    'manager':      3,
+    'system_admin': 2,
+    'store':        1,
+    'cashier':      0,
 }
 
 PERMISSIONS = {
-    'view_dashboard':      ['super_admin', 'manager', 'system_admin', 'store'],
-    'punch':               ['super_admin', 'manager', 'system_admin', 'store'],
+    'view_dashboard':      ['super_admin', 'manager', 'system_admin', 'store', 'cashier'],
+    'punch':               ['super_admin', 'manager', 'system_admin', 'store', 'cashier'],
     'view_attendance':     ['super_admin', 'manager', 'system_admin'],
     'export_attendance':   ['super_admin', 'manager'],
     'manual_attendance':   ['super_admin'],
     'roster':              ['super_admin', 'manager'],
+    'manage_shifts':       ['super_admin'],
     'manage_employees':    ['super_admin', 'manager', 'system_admin'],
     'biometric_enroll':    ['super_admin', 'manager', 'system_admin'],
-    'sync':                ['super_admin', 'manager'],
-    'view_payroll':        ['super_admin', 'manager'],
-    'manage_users':        ['super_admin'],
+    'sync':                ['super_admin', 'store'],
+    'view_payroll':        ['super_admin'],
+    'manage_users':        ['super_admin', 'manager'],
     'system_settings':     ['super_admin'],
 }
 
 # Roles that can access a permission by verifying OVERRIDE_PASSWORD at runtime
 OVERRIDE_ESCALATABLE = {
-    'manual_attendance': ['manager', 'store'],
+    'manual_attendance': ['store'],
 }
 
 

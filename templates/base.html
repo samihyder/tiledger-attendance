@@ -40,6 +40,7 @@
           </a>
         </li>
 
+        {# ── Attendance ── #}
         {% if session.role in ['super_admin', 'manager', 'system_admin'] %}
         <li class="nav-item">
           <a class="nav-link text-white-50 {% if request.endpoint == 'attendance.log' %}active text-white{% endif %}"
@@ -49,18 +50,19 @@
         </li>
         {% endif %}
 
-        {% if session.role in ['super_admin', 'manager', 'store'] %}
+        {% if session.role in ['super_admin', 'store'] %}
         <li class="nav-item">
           <a class="nav-link text-white-50 {% if request.endpoint == 'attendance.manual' %}active text-white{% endif %}"
              href="{{ url_for('attendance.manual') }}">
             <i class="bi bi-pencil-square me-2"></i>Manual Entry
-            {% if session.role in ['manager', 'store'] %}
+            {% if session.role == 'store' %}
             <i class="bi bi-shield-lock ms-1 text-warning" title="Requires override password"></i>
             {% endif %}
           </a>
         </li>
         {% endif %}
 
+        {# ── Roster ── #}
         {% if session.role in ['super_admin', 'manager'] %}
         <li class="nav-item mt-2">
           <div class="text-secondary px-2 small text-uppercase fw-semibold">Roster</div>
@@ -75,10 +77,14 @@
           <a class="nav-link text-white-50 {% if request.endpoint in ['roster.list_shifts','roster.new_shift','roster.edit_shift'] %}active text-white{% endif %}"
              href="{{ url_for('roster.list_shifts') }}">
             <i class="bi bi-clock me-2"></i>Shifts
+            {% if session.role != 'super_admin' %}
+            <i class="bi bi-eye ms-1 text-secondary" style="font-size:0.7rem" title="View only"></i>
+            {% endif %}
           </a>
         </li>
         {% endif %}
 
+        {# ── People ── #}
         {% if session.role in ['super_admin', 'manager', 'system_admin'] %}
         <li class="nav-item mt-2">
           <div class="text-secondary px-2 small text-uppercase fw-semibold">People</div>
@@ -91,7 +97,8 @@
         </li>
         {% endif %}
 
-        {% if session.role in ['super_admin', 'manager'] %}
+        {# ── Finance — super_admin only ── #}
+        {% if session.role == 'super_admin' %}
         <li class="nav-item mt-2">
           <div class="text-secondary px-2 small text-uppercase fw-semibold">Finance</div>
         </li>
@@ -103,6 +110,7 @@
         </li>
         {% endif %}
 
+        {# ── Admin / Data Cleanup — super_admin only ── #}
         {% if session.role == 'super_admin' %}
         <li class="nav-item mt-2">
           <div class="text-secondary px-2 small text-uppercase fw-semibold">Admin</div>
@@ -115,7 +123,8 @@
         </li>
         {% endif %}
 
-        {% if session.role in ['super_admin', 'manager'] %}
+        {# ── System — super_admin only ── #}
+        {% if session.role == 'super_admin' %}
         <li class="nav-item mt-2">
           <div class="text-secondary px-2 small text-uppercase fw-semibold">System</div>
         </li>

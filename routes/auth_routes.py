@@ -32,8 +32,8 @@ def login():
             db.update_last_login(user['id'])
             flash(f'Welcome back, {user["full_name"]}!', 'success')
             next_url = request.args.get('next')
-            # Store users land directly on the punch screen
-            if user['role'] == 'store':
+            # Punch-only roles land directly on the punch screen
+            if user['role'] in ('store', 'cashier'):
                 return redirect(next_url or url_for('attendance.punch_screen'))
             return redirect(next_url or url_for('main.dashboard'))
         else:

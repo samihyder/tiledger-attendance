@@ -57,7 +57,7 @@ def list_shifts():
 
 @roster_bp.route('/shifts/new', methods=['GET', 'POST'])
 @login_required
-@permission_required('roster')
+@permission_required('manage_shifts')
 def new_shift():
     if request.method == 'POST':
         data = {
@@ -77,7 +77,7 @@ def new_shift():
 
 @roster_bp.route('/shifts/<int:shift_id>/edit', methods=['GET', 'POST'])
 @login_required
-@permission_required('roster')
+@permission_required('manage_shifts')
 def edit_shift(shift_id):
     shift = db.get_shift(shift_id)
     if not shift:

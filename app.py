@@ -94,7 +94,7 @@ def create_app() -> Flask:
         h = dt.now().hour
         in_shift = h >= 19 or h < 4
         role = s.get('role', '')
-        return {'logout_locked': in_shift and role in ('store', 'manager')}
+        return {'logout_locked': in_shift and role in ('store', 'cashier', 'manager')}
 
     # Return JSON (not HTML) for any unhandled exception on API endpoints
     @app.errorhandler(Exception)

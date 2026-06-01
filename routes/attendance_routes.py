@@ -51,7 +51,7 @@ def api_toggle_manual_mode():
     try:
         user = current_user()
         role = user['role'] if user else ''
-        if role not in ('super_admin', 'manager', 'store'):
+        if role not in ('super_admin', 'store'):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
         data  = request.get_json(silent=True) or {}
