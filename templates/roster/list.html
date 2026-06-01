@@ -1,8 +1,15 @@
 {% extends 'base.html' %}
 {% block title %}Rosters{% endblock %}
 {% block content %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0">Rosters</h4>
+  <div>
+    <h4 class="fw-bold mb-1">Rosters</h4>
+    <p class="text-muted small mb-0">
+      {{ total }} entr{{ 'y' if total == 1 else 'ies' }} &middot;
+      {{ date_from }} to {{ date_to }}
+    </p>
+  </div>
   <div class="d-flex gap-2">
     <a href="{{ url_for('roster.list_shifts') }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-clock me-1"></i>Manage Shifts
@@ -13,65 +20,129 @@
   </div>
 </div>
 
+{# ── Filter ── #}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-body">
+  <div class="card-body py-3">
     <form class="row g-2 align-items-end" method="GET">
       <div class="col-md-3">
-        <label class="form-label small fw-semibold">From</label>
+        <label class="form-label small fw-semibold mb-1">From</label>
         <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
       </div>
       <div class="col-md-3">
-        <label class="form-label small fw-semibold">To</label>
+        <label class="form-label small fw-semibold mb-1">To</label>
         <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
       </div>
       <div class="col-md-4">
-        <label class="form-label small fw-semibold">Employee</label>
+        <label class="form-label small fw-semibold mb-1">Employee</label>
         <select name="employee_id" class="form-select form-select-sm">
-          <option value="">All</option>
+          <option value="">All Employees</option>
           {% for e in employees %}
-            <option value="{{ e.id }}" {% if selected_employee == e.id %}selected{% endif %}>{{ e.full_name }}</option>
+            <option value="{{ e.id }}" {% if selected_employee == e.id %}selected{% endif %}>
+              {{ e.full_name }}
+            </option>
           {% endfor %}
         </select>
       </div>
       <div class="col-md-2">
-        <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+        <button type="submit" class="btn btn-primary btn-sm w-100">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
       </div>
     </form>
   </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-  <div class="card-body p-0">
-    {% if rosters %}
-    <table class="table table-hover mb-0">
-      <thead class="table-light">
-        <tr><th>Date</th><th>Employee</th><th>Shift</th><th>Start</th><th>End</th><th>Grace</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for r in rosters %}
-        <tr>
-          <td>{{ r.roster_date }}</td>
-          <td>
-            <div class="fw-semibold">{{ r.full_name }}</div>
-            <div class="text-muted small">{{ r.employee_code }}</div>
-          </td>
-          <td>{{ r.shift_name }}</td>
-          <td>{{ r.shift_start }}</td>
-          <td>{{ r.shift_end }}</td>
-          <td>{{ r.grace_minutes }} min</td>
-          <td>
-            <form action="{{ url_for('roster.delete_roster', roster_id=r.id) }}" method="POST"
-                  onsubmit="return confirm('Delete this roster entry?')" class="d-inline">
-              <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-      <div class="text-center text-muted py-4">No rosters found</div>
-    {% endif %}
+{# ── Roster groups ── #}
+{% if roster_groups %}
+  {% for group in roster_groups %}
+  <div class="mb-4">
+
+    {# Date header #}
+    <div class="d-flex align-items-center gap-3 mb-2">
+      <div class="d-flex align-items-baseline gap-2">
+        <span class="fw-bold text-primary" style="font-size:1rem">{{ group.day_name }}</span>
+        <span class="text-muted small">{{ group.display }}</span>
+      </div>
+      <div class="flex-grow-1 border-bottom"></div>
+      <span class="badge bg-light text-secondary border">
+        {{ group.entries|length }} staff
+      </span>
+    </div>
+
+    {# Entries #}
+    <div class="card border-0 shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <tbody>
+            {% for r in group.entries %}
+            <tr>
+              {# Employee #}
+              <td style="width:35%">
+                <div class="fw-semibold">{{ r.full_name }}</div>
+                <div class="text-muted small">{{ r.employee_code }}</div>
+              </td>
+
+              {# Shift / Holiday #}
+              <td style="width:25%">
+                {% if r.is_holiday %}
+                  <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
+                    <i class="bi bi-moon me-1"></i>Day Off
+                  </span>
+                {% else %}
+                  <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">
+                    {{ r.shift_name }}
+                  </span>
+                {% endif %}
+              </td>
+
+              {# Hours #}
+              <td style="width:30%">
+                {% if r.is_holiday %}
+                  <span class="text-muted small">—</span>
+                {% else %}
+                  <span class="fw-semibold text-dark">
+                    {{ r.shift_start[:5] if r.shift_start else '—' }}
+                  </span>
+                  <span class="text-muted mx-1">&rarr;</span>
+                  <span class="fw-semibold text-dark">
+                    {{ r.shift_end[:5] if r.shift_end else '—' }}
+                  </span>
+                  <span class="text-muted small ms-2">
+                    ({{ r.grace_minutes }}m grace)
+                  </span>
+                {% endif %}
+              </td>
+
+              {# Delete #}
+              <td class="text-end" style="width:10%">
+                <form action="{{ url_for('roster.delete_roster', roster_id=r.id) }}" method="POST"
+                      onsubmit="return confirm('Delete this roster entry for {{ r.full_name }}?')"
+                      class="d-inline">
+                  <button class="btn btn-sm btn-outline-danger border-0" title="Delete">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
-</div>
+  {% endfor %}
+
+{% else %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body text-center py-5">
+      <i class="bi bi-calendar-x fs-1 text-muted"></i>
+      <p class="text-muted mt-3 mb-2">No rosters found for this period.</p>
+      <a href="{{ url_for('roster.assign') }}" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>Assign Roster
+      </a>
+    </div>
+  </div>
+{% endif %}
+
 {% endblock %}

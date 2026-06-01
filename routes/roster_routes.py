@@ -18,9 +18,27 @@ def list_rosters():
 
     rosters   = db.get_rosters(date_from=date_from, date_to=date_to, employee_id=employee_id)
     employees = db.get_employees()
+
+    # Group by date for the list view
+    from datetime import datetime as _dt
+    grouped: dict = {}
+    for r in rosters:
+        d = r['roster_date']
+        if d not in grouped:
+            date_obj = _dt.strptime(d, '%Y-%m-%d').date()
+            grouped[d] = {
+                'date_str': d,
+                'day_name': date_obj.strftime('%A'),
+                'display':  date_obj.strftime('%d %b %Y'),
+                'entries':  [],
+            }
+        grouped[d]['entries'].append(r)
+    roster_groups = list(grouped.values())
+
     return render_template(
         'roster/list.html',
-        rosters=rosters,
+        roster_groups=roster_groups,
+        total=len(rosters),
         employees=employees,
         date_from=date_from,
         date_to=date_to,
