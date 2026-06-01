@@ -110,10 +110,11 @@
 
         <div class="alert alert-info py-2 small mb-3">
           <i class="bi bi-shield-check me-2"></i>
-          <strong>Anti-spoofing active.</strong>
-          System checks for printed photos and screen displays.
-          Ensure good lighting and look directly at the camera.
-          {{ face_enroll_frames }} frames are captured and averaged for best quality.
+          <strong>For best recognition accuracy:</strong>
+          Use good, even lighting — avoid backlighting from windows.
+          Look directly at the camera and hold still.
+          {{ face_enroll_frames }} frames are captured and averaged into one high-quality template.
+          Remove glasses or face coverings if recognition fails later.
         </div>
 
         <!-- Camera preview -->
@@ -353,40 +354,42 @@ function captureFrame() {
 }
 
 async function enrollFace(empId) {
-  const FRAMES = {{ face_enroll_frames }};
-  const btn    = document.getElementById('btn-enroll-face');
-  const prog   = document.getElementById('frame-progress');
-  const bar    = document.getElementById('frame-bar');
-  const lbl    = document.getElementById('frame-label');
-  const status = document.getElementById('face-status');
-  const video  = document.getElementById('face-video');
+  const FRAMES   = {{ face_enroll_frames }};
+  const btn      = document.getElementById('btn-enroll-face');
+  const prog     = document.getElementById('frame-progress');
+  const bar      = document.getElementById('frame-bar');
+  const lbl      = document.getElementById('frame-label');
+  const status   = document.getElementById('face-status');
+  const video    = document.getElementById('face-video');
 
   clearInterval(livenessTimer);
   btn.disabled = true;
   prog.classList.remove('d-none');
-  status.innerHTML = '<i class="bi bi-camera-fill me-1 text-info"></i>Capturing face descriptors…';
+  status.innerHTML = '<i class="bi bi-camera-fill me-1 text-info"></i>Look directly at the camera — capturing…';
 
   const embeddings = [];
-  for (let i = 0; i < FRAMES; i++) {
-    await new Promise(r => setTimeout(r, 700));
+  // Try up to FRAMES + 4 attempts to collect FRAMES good frames
+  for (let attempt = 0; embeddings.length < FRAMES && attempt < FRAMES + 4; attempt++) {
+    await new Promise(r => setTimeout(r, 600));
     try {
       const det = await faceapi
-        .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+        .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.45 }))
         .withFaceLandmarks()
         .withFaceDescriptor();
       if (det) {
         embeddings.push(Array.from(det.descriptor));
         bar.style.width = Math.round(embeddings.length / FRAMES * 100) + '%';
         lbl.textContent = `${embeddings.length} / ${FRAMES}`;
+        status.innerHTML = `<i class="bi bi-camera-fill me-1 text-success"></i>Captured ${embeddings.length} of ${FRAMES} frames…`;
       } else {
-        status.innerHTML = `<span class="text-warning">Frame ${i+1}: no face detected — stay still</span>`;
+        status.innerHTML = `<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>No face detected — face the camera and hold still</span>`;
       }
     } catch(e) { /* skip frame */ }
   }
 
   if (embeddings.length < FRAMES) {
     prog.classList.add('d-none');
-    status.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Could not detect face in all frames. Ensure good lighting and face the camera directly.</span>`;
+    status.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Only captured ${embeddings.length}/${FRAMES} frames. Ensure good lighting, remove glasses if needed, and face the camera directly.</span>`;
     btn.disabled = false;
     startLivenessPreview();
     return;

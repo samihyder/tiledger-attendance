@@ -82,7 +82,7 @@
         </div>
         {% else %}
         <!-- Camera preview -->
-        <div class="ratio ratio-4x3 bg-dark rounded-3 overflow-hidden mb-2" style="max-height:220px">
+        <div class="ratio ratio-4x3 bg-dark rounded-3 overflow-hidden mb-2" style="max-height:220px;position:relative">
           <video id="face-video" autoplay playsinline muted class="object-fit-cover d-none"></video>
           <div id="face-placeholder" class="d-flex align-items-center justify-content-center">
             <div class="text-center text-white opacity-50">
@@ -90,25 +90,29 @@
               <div class="small mt-1">Click below to activate camera</div>
             </div>
           </div>
+          <!-- Frame capture progress overlay -->
+          <div id="face-capture-overlay" class="d-none position-absolute bottom-0 start-0 end-0 p-2"
+               style="background:rgba(0,0,0,0.55)">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <small class="text-white fw-semibold" id="capture-label">Scanning…</small>
+              <small class="text-white" id="capture-count">0 / 3</small>
+            </div>
+            <div class="progress" style="height:4px">
+              <div id="capture-bar" class="progress-bar bg-info" style="width:0%"></div>
+            </div>
+          </div>
         </div>
         <canvas id="face-canvas" class="d-none"></canvas>
 
-        <!-- Liveness indicator -->
+        <!-- Detection quality bar -->
         <div id="liveness-bar" class="d-none mb-2">
           <div class="d-flex justify-content-between">
-            <small class="text-muted">Liveness</small>
+            <small class="text-muted">Face quality</small>
             <small id="liveness-label">—</small>
           </div>
           <div class="progress" style="height:5px">
             <div id="liveness-fill" class="progress-bar bg-success" style="width:0%"></div>
           </div>
-        </div>
-
-        <!-- Blink challenge -->
-        <div id="blink-challenge" class="d-none alert alert-primary py-2 text-center small mb-2">
-          <i class="bi bi-eye me-1"></i>
-          <strong>Please blink your eyes naturally</strong>
-          <div class="small text-muted">Looking for blink… <span id="blink-countdown"></span></div>
         </div>
 
         <div id="face-status" class="text-muted small text-center mb-2"></div>
@@ -119,7 +123,7 @@
           </button>
           <button id="btn-face-scan" class="btn btn-info text-white btn-lg fw-semibold py-2 d-none"
                   onclick="startFaceScan()">
-            <i class="bi bi-person-bounding-box me-2"></i>Identify Face
+            <i class="bi bi-person-bounding-box me-2"></i>Scan &amp; Identify (3 frames)
           </button>
         </div>
         {% endif %}
@@ -433,61 +437,108 @@ async function updateLivenessBar() {
   } catch {}
 }
 
+const FACE_SCAN_FRAMES   = 3;    // frames captured and averaged per scan
+const FACE_SCAN_INTERVAL = 500;  // ms between frame captures
+const FACE_MIN_CONF      = 0.45; // minimum SSD detection confidence per frame
+const FACE_MAX_RETRIES   = 2;    // auto-retries on no-face-detected before giving up
+
+async function captureEmbedding(video) {
+  /** Detect face and return 128-d descriptor, or null if no face found. */
+  const det = await faceapi
+    .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: FACE_MIN_CONF }))
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+  return det ? Array.from(det.descriptor) : null;
+}
+
 async function startFaceScan() {
-  const btn    = document.getElementById('btn-face-scan');
-  const status = document.getElementById('face-status');
+  const btn     = document.getElementById('btn-face-scan');
+  const status  = document.getElementById('face-status');
+  const overlay = document.getElementById('face-capture-overlay');
+  const bar     = document.getElementById('capture-bar');
+  const count   = document.getElementById('capture-count');
+  const label   = document.getElementById('capture-label');
+
   clearInterval(livenessTimer);
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Identifying…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Scanning…';
 
   const video = document.getElementById('face-video');
   if (!video.videoWidth) {
     showError('Camera not ready — try again');
     btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Identify Face';
+    btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Scan &amp; Identify (3 frames)';
     return;
   }
 
-  status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Detecting face…</span>';
+  // ── Capture FACE_SCAN_FRAMES embeddings ────────────────────────────────
+  let embeddings = [];
+  let misses = 0;
+  overlay.classList.remove('d-none');
+  status.innerHTML = '<span class="text-info"><i class="bi bi-camera-fill me-1"></i>Look at the camera…</span>';
 
+  for (let attempt = 0; embeddings.length < FACE_SCAN_FRAMES && attempt < FACE_SCAN_FRAMES + FACE_MAX_RETRIES * 2; attempt++) {
+    await new Promise(r => setTimeout(r, FACE_SCAN_INTERVAL));
+    label.textContent = 'Capturing…';
+    count.textContent = `${embeddings.length} / ${FACE_SCAN_FRAMES}`;
+    bar.style.width   = Math.round(embeddings.length / FACE_SCAN_FRAMES * 100) + '%';
+
+    try {
+      const emb = await captureEmbedding(video);
+      if (emb) {
+        embeddings.push(emb);
+        count.textContent = `${embeddings.length} / ${FACE_SCAN_FRAMES}`;
+        bar.style.width   = Math.round(embeddings.length / FACE_SCAN_FRAMES * 100) + '%';
+      } else {
+        misses++;
+        label.textContent = 'No face — stay still…';
+      }
+    } catch (e) { misses++; }
+  }
+
+  overlay.classList.add('d-none');
+
+  if (embeddings.length === 0) {
+    status.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-circle me-1"></i>No face detected. Ensure good lighting and face the camera directly.</span>';
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Scan &amp; Identify (3 frames)';
+    livenessTimer = setInterval(updateLivenessBar, 2000);
+    return;
+  }
+
+  if (embeddings.length < FACE_SCAN_FRAMES) {
+    status.innerHTML = `<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Only ${embeddings.length}/${FACE_SCAN_FRAMES} frames captured — matching with partial data…</span>`;
+  } else {
+    status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Matching against enrolled faces…</span>';
+  }
+
+  // ── Send to server ─────────────────────────────────────────────────────
   try {
-    const det = await faceapi
-      .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!det) {
-      status.innerHTML = '<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>No face detected — look at the camera</span>';
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Identify Face';
-      livenessTimer = setInterval(updateLivenessBar, 2000);
-      return;
-    }
-
-    status.innerHTML = '<span class="text-info"><i class="bi bi-cpu me-1"></i>Matching…</span>';
-    const embedding = Array.from(det.descriptor);
-
     const resp = await fetch(API.facePunch, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ embedding }),
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ embeddings }),
     });
     const data = await resp.json();
 
     if (data.success) {
       data.punch_method = 'face';
       showResult(data);
-      status.innerHTML = `<span class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>Matched — ${data.confidence}% confidence</span>`;
+      status.innerHTML = `<span class="text-success fw-semibold">
+        <i class="bi bi-check-circle me-1"></i>Matched — ${data.confidence}% confidence
+        <span class="text-muted small">(${data.frames_used || embeddings.length} frames)</span>
+      </span>`;
     } else {
       status.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${data.error}</span>`;
       showError(data.error);
     }
-  } catch(e) {
-    showError(`Error: ${e.message}`);
+  } catch (e) {
+    showError(`Network error: ${e.message}`);
     status.innerHTML = `<span class="text-danger">${e.message}</span>`;
   }
 
   btn.disabled = false;
-  btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Identify Face';
+  btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Scan &amp; Identify (3 frames)';
   livenessTimer = setInterval(updateLivenessBar, 2000);
 }
 

@@ -73,7 +73,7 @@ class Config:
     # Face recognition
     FACE_MATCH_THRESHOLD = 0.55      # Euclidean distance — lower = stricter
     FACE_SPOOF_MIN_SCORE = 60        # % of anti-spoofing checks that must pass
-    FACE_ENROLL_FRAMES   = 3         # frames averaged during enrollment
+    FACE_ENROLL_FRAMES   = 5         # frames averaged during enrollment
     FACE_MOCK_MODE       = os.environ.get('FACE_MOCK', 'false').lower() == 'true'
 
     # Server — localhost only

@@ -90,10 +90,22 @@ def api_manual_punch():
 @permission_required('punch')
 def api_face_punch():
     try:
-        data      = request.get_json(silent=True) or {}
-        embedding = data.get('embedding', [])
-        if not embedding or len(embedding) != 128:
-            return jsonify({'success': False, 'error': 'Invalid face embedding from browser'}), 400
+        data = request.get_json(silent=True) or {}
+
+        # Accept either:
+        #   { embeddings: [[128 floats], ...] }  — multi-frame (preferred)
+        #   { embedding:  [128 floats] }          — single-frame (legacy)
+        embeddings = data.get('embeddings')
+        if not embeddings:
+            single = data.get('embedding', [])
+            if not single or len(single) != 128:
+                return jsonify({'success': False, 'error': 'No valid face embedding received'}), 400
+            embeddings = [single]
+
+        # Validate each embedding
+        for emb in embeddings:
+            if not isinstance(emb, list) or len(emb) != 128:
+                return jsonify({'success': False, 'error': 'Malformed face embedding (expected 128 floats)'}), 400
 
         templates = db.get_all_face_templates()
         if not templates:
@@ -105,13 +117,18 @@ def api_face_punch():
             for t in templates
         ]
 
-        matched = face.identify(embedding, template_list)
+        matched = face.identify_multi(embeddings, template_list)
         if not matched:
-            return jsonify({'success': False, 'error': 'Face not recognised — try again or use manual entry'}), 401
+            return jsonify({
+                'success': False,
+                'error': 'Face not recognised — ensure good lighting, face the camera directly, and try again'
+            }), 401
 
         result = logic.process_biometric_punch(matched['employee_id'])
         result['confidence']   = matched.get('confidence', 0)
+        result['distance']     = round(matched.get('distance', 0), 4)
         result['punch_method'] = 'face'
+        result['frames_used']  = len(embeddings)
         return jsonify(result)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
