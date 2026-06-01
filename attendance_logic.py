@@ -20,11 +20,20 @@ def calculate_minutes_late(punch_time: datetime, shift_start_str: str, grace_min
     return max(0, int((punch_time - shift_start).total_seconds() / 60))
 
 
-def determine_punch_type(employee_id: int, punch_date_str: str) -> str:
-    last = db.get_last_punch(employee_id, punch_date_str)
-    if last is None or last['punch_type'] == 'out':
+def determine_punch_type(employee_id: int, punch_date_str: str) -> str | None:
+    """
+    Returns 'in', 'out', or None.
+    None means a complete IN→OUT cycle already exists for this shift — block further punches.
+    Uses the shift window (19:00-04:00 for night shifts) so cross-midnight punches are seen.
+    """
+    shift_punches = db.get_shift_punches(employee_id, punch_date_str)
+    ins  = [p for p in shift_punches if p['punch_type'] == 'in']
+    outs = [p for p in shift_punches if p['punch_type'] == 'out']
+    if not ins:
         return 'in'
-    return 'out'
+    if not outs:
+        return 'out'
+    return None  # shift complete
 
 
 def check_roster_for_punch(employee_id: int, date_str: str) -> tuple[dict | None, str | None]:
@@ -59,12 +68,21 @@ def process_biometric_punch(employee_id: int) -> dict:
         if elapsed < Config.PUNCH_COOLDOWN_MINUTES:
             return {'success': False, 'error': f'Already punched {int(elapsed * 60)}s ago — please wait'}
 
+    # Check shift status first
+    punch_type = determine_punch_type(employee_id, today)
+    if punch_type is None:
+        return {'success': False, 'error': f'{employee["full_name"]} has already completed their shift today (punched in and out)'}
+    if punch_type == 'in':
+        # Verify punch_type=in makes sense given a cooldown check
+        last = db.get_last_punch(employee_id, today)
+        if last and last['punch_type'] == 'in':
+            return {'success': False, 'error': f'{employee["full_name"]} is already punched in — please punch out first'}
+
     # Roster enforcement
     roster, roster_error = check_roster_for_punch(employee_id, today)
     if roster_error and not roster:
         return {'success': False, 'error': roster_error}
 
-    punch_type = determine_punch_type(employee_id, today)
     minutes_late = 0
     roster_id = roster['id'] if roster else None
 
@@ -90,6 +108,7 @@ def process_biometric_punch(employee_id: int) -> dict:
         'punch_time': punch_time_str,
         'minutes_late': minutes_late,
         'on_time': minutes_late == 0,
+        'shift_start': roster['shift_start'][:5] if roster and not roster['is_holiday'] else None,
     }
 
 
@@ -103,20 +122,28 @@ def process_manual_day_punch(employee_id: int, override_by: int) -> dict:
     if not employee:
         return {'success': False, 'error': 'Employee not found'}
 
+    # Check shift status
+    punch_type = determine_punch_type(employee_id, today)
+    if punch_type is None:
+        return {'success': False, 'error': f'{employee["full_name"]} has already completed their shift today'}
+    if punch_type == 'in':
+        last = db.get_last_punch(employee_id, today)
+        if last and last['punch_type'] == 'in':
+            return {'success': False, 'error': f'{employee["full_name"]} is already punched in'}
+
     # Cooldown
     last = db.get_last_punch(employee_id, today)
     if last:
         last_time = datetime.strptime(last['punch_time'], '%Y-%m-%d %H:%M:%S')
         elapsed = (now - last_time).total_seconds() / 60
         if elapsed < Config.PUNCH_COOLDOWN_MINUTES:
-            return {'success': False, 'error': f'{employee["full_name"]} already punched {int(elapsed * 60)}s ago'}
+            return {'success': False, 'error': f'{employee["full_name"]} already punched {int(elapsed * 60)}s ago — wait a moment'}
 
     # Roster enforcement
     roster, roster_error = check_roster_for_punch(employee_id, today)
     if roster_error and not roster:
         return {'success': False, 'error': roster_error}
 
-    punch_type = determine_punch_type(employee_id, today)
     minutes_late = 0
     roster_id = roster['id'] if roster else None
 
@@ -144,6 +171,7 @@ def process_manual_day_punch(employee_id: int, override_by: int) -> dict:
         'punch_time': punch_time_str,
         'minutes_late': minutes_late,
         'on_time': minutes_late == 0,
+        'shift_start': roster['shift_start'][:5] if roster and not roster['is_holiday'] else None,
     }
 
 
@@ -248,3 +276,97 @@ def get_daily_summary(date_str: str) -> list[dict]:
         entry['late_deduction_amount'] = round(entry['minutes_late'] * rate, 2) if rate else 0
 
     return sorted(by_employee.values(), key=lambda x: x['full_name'])
+
+
+# ── Shift date helper ─────────────────────────────────────────────────────────
+
+def _shift_date(punch_time_str: str) -> str:
+    """
+    Return the 'shift date' for a punch: punches before 04:00 AM belong to
+    the previous calendar day's night shift.
+    """
+    if punch_time_str[11:13] < '04':
+        prev = datetime.strptime(punch_time_str[:10], '%Y-%m-%d') - timedelta(days=1)
+        return prev.strftime('%Y-%m-%d')
+    return punch_time_str[:10]
+
+
+# ── Deduplication ─────────────────────────────────────────────────────────────
+
+def build_dedup_plan(date_from: str, date_to: str) -> dict:
+    """
+    Analyse punches in [date_from, date_to] and return a plan showing which
+    records to keep and which to delete.
+
+    Rules:
+      - Group by (employee_id, shift_date)  where shift_date uses _shift_date()
+      - Per group: keep the EARLIEST IN and LATEST OUT; flag the rest for deletion
+      - Also recalculate minutes_late for the kept IN against the roster shift_start
+
+    Returns:
+      {
+        'to_delete': [id, ...],
+        'to_update': [(id, minutes_late), ...],  # kept INs whose late mins may change
+        'groups':    [...summary dicts for display...]
+      }
+    """
+    from collections import defaultdict
+    rows = db.get_all_punches_for_dedup(date_from, date_to)
+
+    # Group by (employee_id, shift_date)
+    groups: dict[tuple, list] = defaultdict(list)
+    for r in rows:
+        key = (r['employee_id'], _shift_date(r['punch_time']))
+        groups[key].append(r)
+
+    to_delete: list[int] = []
+    to_update: list[tuple] = []
+    summary: list[dict] = []
+
+    for (emp_id, shift_date), punches in groups.items():
+        ins  = sorted([p for p in punches if p['punch_type'] == 'in'],  key=lambda p: p['punch_time'])
+        outs = sorted([p for p in punches if p['punch_type'] == 'out'], key=lambda p: p['punch_time'])
+
+        keep_in  = ins[0]  if ins  else None
+        keep_out = outs[-1] if outs else None
+
+        # IDs to delete: all but the kept ones
+        del_ids = [p['id'] for p in ins[1:]] + [p['id'] for p in outs[:-1]]
+        to_delete.extend(del_ids)
+
+        # Recalculate minutes_late for kept IN
+        if keep_in:
+            roster = db.get_roster_for_date(emp_id, shift_date)
+            if roster and not roster['is_holiday']:
+                punch_dt = datetime.strptime(keep_in['punch_time'], '%Y-%m-%d %H:%M:%S')
+                new_late = calculate_minutes_late(punch_dt, roster['shift_start'], roster['grace_minutes'])
+                if new_late != (keep_in.get('minutes_late') or 0):
+                    to_update.append((keep_in['id'], new_late))
+
+        summary.append({
+            'employee_id': emp_id,
+            'shift_date':  shift_date,
+            'kept_in':     keep_in['punch_time'] if keep_in else None,
+            'kept_out':    keep_out['punch_time'] if keep_out else None,
+            'deleted':     del_ids,
+            'total':       len(punches),
+        })
+
+    return {
+        'to_delete': to_delete,
+        'to_update': to_update,
+        'groups':    sorted(summary, key=lambda x: (x['shift_date'], x['employee_id'])),
+    }
+
+
+def run_deduplication(date_from: str, date_to: str) -> dict:
+    """Execute the dedup plan and return counts."""
+    plan = build_dedup_plan(date_from, date_to)
+    deleted = db.delete_punches_by_ids(plan['to_delete'])
+    for punch_id, new_late in plan['to_update']:
+        db.update_punch_minutes_late(punch_id, new_late)
+    return {
+        'deleted': deleted,
+        'updated': len(plan['to_update']),
+        'groups':  len(plan['groups']),
+    }

@@ -265,6 +265,11 @@ def update_shift(shift_id: int, data: dict):
 
 # ── Rosters ───────────────────────────────────────────────────────────────────
 
+def get_roster(roster_id: int):
+    rows = _get('rosters', '*,shifts(shift_name,shift_start,shift_end,grace_minutes)',
+                [('id', f'eq.{roster_id}')], limit=1)
+    return _flat(rows[0], 'shifts') if rows else None
+
 def get_roster_for_date(employee_id: int, roster_date: str):
     rows = _get('rosters', '*,shifts(shift_name,shift_start,shift_end,grace_minutes)',
                 [('employee_id', f'eq.{employee_id}'), ('roster_date', f'eq.{roster_date}')],
@@ -337,12 +342,67 @@ def delete_face_template(employee_id: int):
 # ── Attendance ────────────────────────────────────────────────────────────────
 
 def get_last_punch(employee_id: int, date_str: str):
-    rows = _get('attendance_logs', '*',
+    from datetime import datetime as _dt, timedelta as _td
+    now = _dt.now()
+    # Night shift: if before 04:00, look back to yesterday 19:00
+    if now.hour < 4:
+        prev = (_dt.strptime(date_str, '%Y-%m-%d') - _td(days=1)).strftime('%Y-%m-%d')
+        time_from = f'{prev}T19:00:00'
+    else:
+        time_from = f'{date_str}T00:00:00'
+    rows = _get('attendance_logs', '*,employees(full_name,employee_code)',
                 [('employee_id', f'eq.{employee_id}'),
-                 ('punch_time',  f'gte.{date_str}T00:00:00'),
+                 ('punch_time',  f'gte.{time_from}'),
                  ('punch_time',  f'lte.{date_str}T23:59:59')],
                 order='punch_time.desc', limit=1)
     return _norm_log(rows[0]) if rows else None
+
+
+def get_shift_punches(employee_id: int, date_str: str) -> list:
+    """All punches for the employee's current shift window (night-shift aware)."""
+    from datetime import datetime as _dt, timedelta as _td
+    now = _dt.now()
+    if now.hour < 4:
+        prev = (_dt.strptime(date_str, '%Y-%m-%d') - _td(days=1)).strftime('%Y-%m-%d')
+        time_from = f'{prev}T19:00:00'
+        time_to   = f'{date_str}T04:00:00'
+    else:
+        time_from = f'{date_str}T00:00:00'
+        time_to   = f'{date_str}T23:59:59'
+    rows = _get('attendance_logs', '*,employees(full_name,employee_code)',
+                [('employee_id', f'eq.{employee_id}'),
+                 ('punch_time',  f'gte.{time_from}'),
+                 ('punch_time',  f'lte.{time_to}')],
+                order='punch_time.asc')
+    return [_norm_log(r) for r in rows]
+
+
+def delete_punches_by_ids(ids: list) -> int:
+    """Delete specific punch records by ID. Returns count deleted."""
+    if not ids:
+        return 0
+    ids_str = ','.join(str(i) for i in ids)
+    _delete('attendance_logs', [('id', f'in.({ids_str})')])
+    return len(ids)
+
+
+def delete_punches_for_date(date_str: str) -> int:
+    """Delete all punch records on a calendar date. Returns count deleted."""
+    rows = _get('attendance_logs', 'id',
+                [('punch_time', f'gte.{date_str}T00:00:00'),
+                 ('punch_time', f'lte.{date_str}T23:59:59')])
+    ids = [r['id'] for r in rows]
+    return delete_punches_by_ids(ids)
+
+
+def get_all_punches_for_dedup(date_from: str, date_to: str) -> list:
+    """Fetch all punch records in a date range for deduplication analysis."""
+    rows = _get('attendance_logs',
+                'id,employee_id,punch_time,punch_type,roster_id,minutes_late',
+                [('punch_time', f'gte.{date_from}T00:00:00'),
+                 ('punch_time', f'lte.{date_to}T23:59:59')],
+                order='punch_time.asc')
+    return rows
 
 def record_punch(employee_id: int, punch_time: str, punch_type: str,
                  punch_source: str, minutes_late: int, roster_id=None,

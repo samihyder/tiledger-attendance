@@ -262,16 +262,29 @@ function setMode(mode) {
 
 // ── Shared result display ──────────────────────────────────────────────────
 function showResult(data) {
-  const isIn   = data.punch_type === 'in';
-  const late   = data.minutes_late > 0
-    ? ` — <span class="text-danger fw-semibold">${data.minutes_late} min late</span>`
-    : ' — <span class="text-success">On time</span>';
-  const conf   = data.confidence ? ` · ${data.confidence}% match` : '';
-  const alert  = document.getElementById('result-alert');
+  const isIn  = data.punch_type === 'in';
+  const conf  = data.confidence ? ` · ${data.confidence}% match` : '';
+  let statusHtml = '';
+  if (isIn) {
+    if (data.shift_start) {
+      if (data.minutes_late > 0) {
+        statusHtml = ` — <span class="text-danger fw-semibold">${data.minutes_late} min late</span>`
+          + ` <span class="text-muted small">(shift starts ${data.shift_start})</span>`;
+      } else {
+        statusHtml = ` — <span class="text-success fw-semibold">On time</span>`
+          + ` <span class="text-muted small">(shift starts ${data.shift_start})</span>`;
+      }
+    } else {
+      statusHtml = data.minutes_late > 0
+        ? ` — <span class="text-danger fw-semibold">${data.minutes_late} min late</span>`
+        : ` — <span class="text-success fw-semibold">On time</span>`;
+    }
+  }
+  const alert = document.getElementById('result-alert');
   alert.className = `alert alert-${isIn ? 'success' : 'secondary'}`;
   document.getElementById('result-name').textContent = `${data.employee_name} (${data.employee_code})`;
   document.getElementById('result-detail').innerHTML =
-    `<strong>${data.punch_type.toUpperCase()}</strong> at ${data.punch_time.slice(11,16)}${isIn ? late : ''}${conf}`;
+    `<strong>${data.punch_type.toUpperCase()}</strong> at ${data.punch_time.slice(11,16)}${isIn ? statusHtml : ''}${conf}`;
   document.getElementById('result-card').classList.remove('d-none');
   prependRow(data);
   setTimeout(() => document.getElementById('result-card').classList.add('d-none'), 5000);

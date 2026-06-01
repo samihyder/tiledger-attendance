@@ -272,3 +272,102 @@ def manual():
         now=datetime.now().strftime('%Y-%m-%dT%H:%M'),
         user=current_user(),
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Data cleanup — super admin only
+# ──────────────────────────────────────────────────────────────────────────────
+
+@attendance_bp.route('/cleanup', methods=['GET'])
+@login_required
+def cleanup_page():
+    if session.get('role') != 'super_admin':
+        flash('Super Admin only.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    return render_template('attendance/cleanup.html', user=current_user())
+
+
+@attendance_bp.route('/api/cleanup/delete-date', methods=['POST'])
+@login_required
+def api_cleanup_delete_date():
+    if session.get('role') != 'super_admin':
+        return jsonify({'success': False, 'error': 'Super Admin only'}), 403
+    data = request.get_json(silent=True) or {}
+    date_str = data.get('date', '').strip()
+    if not date_str:
+        return jsonify({'success': False, 'error': 'date is required'}), 400
+    try:
+        count = db.delete_punches_for_date(date_str)
+        return jsonify({'success': True, 'deleted': count, 'date': date_str})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@attendance_bp.route('/api/cleanup/dedup-preview', methods=['POST'])
+@login_required
+def api_cleanup_dedup_preview():
+    if session.get('role') != 'super_admin':
+        return jsonify({'success': False, 'error': 'Super Admin only'}), 403
+    data = request.get_json(silent=True) or {}
+    date_from = data.get('date_from', '').strip()
+    date_to   = data.get('date_to', '').strip()
+    if not date_from or not date_to:
+        return jsonify({'success': False, 'error': 'date_from and date_to required'}), 400
+    try:
+        plan = logic.build_dedup_plan(date_from, date_to)
+        return jsonify({
+            'success':      True,
+            'to_delete':    len(plan['to_delete']),
+            'to_update':    len(plan['to_update']),
+            'groups':       len(plan['groups']),
+            'group_detail': plan['groups'][:50],  # cap for JSON size
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@attendance_bp.route('/api/cleanup/recalc-late', methods=['POST'])
+@login_required
+def api_cleanup_recalc_late():
+    """Recalculate minutes_late for every IN punch that has a roster assigned."""
+    if session.get('role') != 'super_admin':
+        return jsonify({'success': False, 'error': 'Super Admin only'}), 403
+    data = request.get_json(silent=True) or {}
+    date_from = data.get('date_from', '').strip()
+    date_to   = data.get('date_to', '').strip()
+    if not date_from or not date_to:
+        return jsonify({'success': False, 'error': 'date_from and date_to required'}), 400
+    try:
+        rows = db.get_all_punches_for_dedup(date_from, date_to)
+        updated = 0
+        for r in rows:
+            if r['punch_type'] != 'in' or not r.get('roster_id'):
+                continue
+            roster = db.get_roster(r['roster_id'])
+            if not roster or roster.get('is_holiday'):
+                continue
+            punch_dt = datetime.strptime(r['punch_time'], '%Y-%m-%d %H:%M:%S')
+            new_late = logic.calculate_minutes_late(punch_dt, roster['shift_start'], roster['grace_minutes'])
+            if new_late != (r.get('minutes_late') or 0):
+                db.update_punch_minutes_late(r['id'], new_late)
+                updated += 1
+        return jsonify({'success': True, 'updated': updated})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@attendance_bp.route('/api/cleanup/dedup-run', methods=['POST'])
+@login_required
+def api_cleanup_dedup_run():
+    if session.get('role') != 'super_admin':
+        return jsonify({'success': False, 'error': 'Super Admin only'}), 403
+    data = request.get_json(silent=True) or {}
+    date_from = data.get('date_from', '').strip()
+    date_to   = data.get('date_to', '').strip()
+    if not date_from or not date_to:
+        return jsonify({'success': False, 'error': 'date_from and date_to required'}), 400
+    try:
+        result = logic.run_deduplication(date_from, date_to)
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
