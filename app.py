@@ -62,6 +62,40 @@ def create_app() -> Flask:
 
     register_blueprints(app)
 
+    # ── Shift-end auto-logout (04:00 AM) ─────────────────────────────────────
+    @app.before_request
+    def auto_logout_at_shift_end():
+        from flask import session as s, request as req, redirect as redir, url_for as uf, flash as fl
+        if 'user_id' not in s:
+            return
+        if req.endpoint in ('auth.login', 'auth.logout', 'auth.verify_override',
+                             'auth.clear_override', 'health', None):
+            return
+        login_time_str = s.get('login_time')
+        if not login_time_str:
+            return
+        from datetime import datetime as dt
+        now = dt.now()
+        today_cutoff = now.replace(hour=4, minute=0, second=0, microsecond=0)
+        try:
+            login_time = dt.fromisoformat(login_time_str)
+        except Exception:
+            return
+        if now >= today_cutoff and login_time < today_cutoff:
+            s.clear()
+            fl('Shift ended — you have been automatically logged out at 04:00 AM.', 'info')
+            return redir(uf('auth.login'))
+
+    # ── Template context: logout lock flag ───────────────────────────────────
+    @app.context_processor
+    def inject_logout_context():
+        from flask import session as s
+        from datetime import datetime as dt
+        h = dt.now().hour
+        in_shift = h >= 19 or h < 4
+        role = s.get('role', '')
+        return {'logout_locked': in_shift and role in ('store', 'manager')}
+
     # Return JSON (not HTML) for any unhandled exception on API endpoints
     @app.errorhandler(Exception)
     def api_error(e):

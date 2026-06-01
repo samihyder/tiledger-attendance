@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+from datetime import datetime
 import db_manager as db
 from config import Config
 from auth import login_required
@@ -23,10 +24,11 @@ def login():
 
         if user and db.verify_password(password, user['password_hash']):
             session.permanent = True
-            session['user_id']   = user['id']
-            session['username']  = user['username']
-            session['full_name'] = user['full_name']
-            session['role']      = user['role']
+            session['user_id']    = user['id']
+            session['username']   = user['username']
+            session['full_name']  = user['full_name']
+            session['role']       = user['role']
+            session['login_time'] = datetime.now().isoformat()
             db.update_last_login(user['id'])
             flash(f'Welcome back, {user["full_name"]}!', 'success')
             next_url = request.args.get('next')
