@@ -190,8 +190,22 @@ def process_manual_punch(employee_id: int, punch_type: str, punch_time_str: str,
 
 
 def get_daily_summary(date_str: str) -> list[dict]:
-    """Per-employee summary: first-in, last-out, hours worked, late mins, deduction amount."""
+    """Per-employee summary: first-in, last-out, hours worked, late mins, deduction amount.
+
+    For night shifts that cross midnight, OUT punches on the next day before 04:00 AM
+    are included so hours_worked is calculated correctly.
+    """
+    from datetime import timedelta
+    next_day = (datetime.strptime(date_str, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
     logs = db.get_attendance_logs(date_from=date_str, date_to=date_str)
+    # Grab next-day early-morning punches (night shift overlap) — OUT only
+    next_morn = [
+        l for l in db.get_attendance_logs(date_from=next_day, date_to=next_day)
+        if l['punch_time'][11:13] < '04' and l['punch_type'] == 'out'
+    ]
+    # Only add these OUT punches for employees who already have an IN on date_str
+    date_str_employees = {l['employee_id'] for l in logs if l['punch_type'] == 'in'}
+    logs = logs + [l for l in next_morn if l['employee_id'] in date_str_employees]
     employees_map = {e['id']: dict(e) for e in db.get_employees(active_only=False)}
 
     by_employee: dict[int, dict] = {}

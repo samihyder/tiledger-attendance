@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from auth import login_required, permission_required, current_user, can_escalate_to
 import db_manager as db
 import biometric_service as bio
@@ -23,9 +23,15 @@ def _is_manual_mode_today() -> bool:
 @login_required
 @permission_required('punch')
 def punch_screen():
+    now   = datetime.now()
     today = date.today().strftime('%Y-%m-%d')
-    recent = db.get_attendance_logs(date_from=today, date_to=today)[:10]
-    employees = db.get_employees(active_only=True) if _is_manual_mode_today() else []
+    # Before 04:00 AM we're still in the previous night's shift — show its punches
+    if now.hour < 4:
+        prev  = (date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
+        recent = db.get_attendance_logs(date_from=prev, date_to=today)[:10]
+    else:
+        recent = db.get_attendance_logs(date_from=today, date_to=today)[:10]
+    employees  = db.get_employees(active_only=True) if _is_manual_mode_today() else []
     face_count = len(db.get_all_face_templates())
     return render_template(
         'attendance/punch.html',

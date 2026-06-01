@@ -426,21 +426,38 @@ def get_sync_history(limit=20):
 # ── Dashboard stats ───────────────────────────────────────────────────────────
 
 def get_today_stats(date_str: str) -> dict:
-    emp_rows  = _get('employees', 'id', [('active', 'eq.true')])
-    total     = len(emp_rows)
-    today_logs = _get('attendance_logs', 'employee_id,punch_type,minutes_late',
-                      [('punch_time', f'gte.{date_str}T00:00:00'),
-                       ('punch_time', f'lte.{date_str}T23:59:59')])
-    present  = {l['employee_id'] for l in today_logs if l['punch_type'] == 'in'}
-    late     = {l['employee_id'] for l in today_logs
-                if l['punch_type'] == 'in' and (l.get('minutes_late') or 0) > 0}
+    from datetime import datetime as _dt, timedelta as _td
+    now = _dt.now()
+    # Night shift ends at 04:00 AM. If we're before 04:00, the active shift started
+    # yesterday at 19:00 — include those punch-ins in today's stats.
+    if now.hour < 4:
+        prev = (_dt.strptime(date_str, '%Y-%m-%d') - _td(days=1)).strftime('%Y-%m-%d')
+        window_from = f'{prev}T19:00:00'
+    else:
+        window_from = f'{date_str}T00:00:00'
+    window_to = f'{date_str}T23:59:59'
+
+    emp_rows   = _get('employees', 'id', [('active', 'eq.true')])
+    total      = len(emp_rows)
+    shift_logs = _get('attendance_logs', 'employee_id,punch_type,minutes_late',
+                      [('punch_time', f'gte.{window_from}'),
+                       ('punch_time', f'lte.{window_to}')])
+
+    punched_in  = {l['employee_id'] for l in shift_logs if l['punch_type'] == 'in'}
+    punched_out = {l['employee_id'] for l in shift_logs if l['punch_type'] == 'out'}
+    late        = {l['employee_id'] for l in shift_logs
+                   if l['punch_type'] == 'in' and (l.get('minutes_late') or 0) > 0}
+    on_shift    = punched_in - punched_out   # punched in but not yet out
+
     unsynced_rows = _get('attendance_logs', 'id', [('synced', 'eq.false')])
     return {
         'total_employees': total,
-        'present':         len(present),
-        'absent':          total - len(present),
+        'present':         len(punched_in),
+        'on_shift':        len(on_shift),
+        'absent':          total - len(punched_in),
         'late':            len(late),
         'unsynced':        len(unsynced_rows),
+        'night_shift_mode': now.hour < 4,
     }
 
 

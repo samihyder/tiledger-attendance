@@ -3,26 +3,31 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="fw-bold mb-0">Attendance Log</h4>
+  <div>
+    <h4 class="fw-bold mb-0">Attendance Log</h4>
+    <p class="text-muted small mb-0">{{ logs|length }} punch record{{ 's' if logs|length != 1 else '' }}</p>
+  </div>
+  {% if session.role in ['super_admin', 'manager'] %}
   <a href="{{ url_for('attendance.manual') }}" class="btn btn-outline-warning btn-sm">
     <i class="bi bi-pencil-square me-1"></i>Backdated Correction
   </a>
+  {% endif %}
 </div>
 
-<!-- Filters -->
+{# ── Filters ── #}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-body">
+  <div class="card-body py-3">
     <form class="row g-2 align-items-end" method="GET">
       <div class="col-md-3">
-        <label class="form-label small fw-semibold">From</label>
+        <label class="form-label small fw-semibold mb-1">From</label>
         <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
       </div>
       <div class="col-md-3">
-        <label class="form-label small fw-semibold">To</label>
+        <label class="form-label small fw-semibold mb-1">To</label>
         <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
       </div>
       <div class="col-md-4">
-        <label class="form-label small fw-semibold">Employee</label>
+        <label class="form-label small fw-semibold mb-1">Employee</label>
         <select name="employee_id" class="form-select form-select-sm">
           <option value="">All Employees</option>
           {% for e in employees %}
@@ -34,55 +39,88 @@
       </div>
       <div class="col-md-2">
         <button type="submit" class="btn btn-primary btn-sm w-100">
-          <i class="bi bi-search me-1"></i>Filter
+          <i class="bi bi-funnel me-1"></i>Filter
         </button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- Daily summary -->
+{# ── Daily summary (single-day view only) ── #}
 {% if summary %}
 <div class="card border-0 shadow-sm mb-4">
-  <div class="card-header bg-white border-0 pt-3">
-    <h6 class="fw-bold mb-0">Daily Summary — {{ date_from }}</h6>
+  <div class="card-header bg-white border-0 pt-3 pb-2">
+    <h6 class="fw-bold mb-0">
+      Daily Summary
+      <span class="text-muted fw-normal ms-1">— {{ date_from }}</span>
+    </h6>
   </div>
   <div class="card-body p-0">
-    <table class="table table-hover mb-0">
+    <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
           <th>Employee</th>
           <th>First In</th>
           <th>Last Out</th>
           <th>Hours</th>
-          <th>Late (min)</th>
+          <th>Punctuality</th>
           <th>Deduction</th>
         </tr>
       </thead>
       <tbody>
         {% for s in summary %}
-        <tr>
+        <tr class="{% if not s.first_in %}table-secondary{% endif %}">
           <td>
             <div class="fw-semibold">{{ s.full_name }}</div>
             <div class="text-muted small">{{ s.employee_code }}</div>
           </td>
-          <td>{{ s.first_in[11:16] if s.first_in else '—' }}</td>
-          <td>{{ s.last_out[11:16] if s.last_out else '—' }}</td>
-          <td>{{ s.hours_worked if s.hours_worked is not none else '—' }}</td>
           <td>
-            {% if s.minutes_late > 0 %}
-              <span class="text-danger fw-semibold">{{ s.minutes_late }} min</span>
+            {% if s.first_in %}
+              <span class="fw-semibold">{{ s.first_in[11:16] }}</span>
             {% else %}
-              <span class="text-success small"><i class="bi bi-check2"></i> On time</span>
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if s.last_out %}
+              <span class="fw-semibold">{{ s.last_out[11:16] }}</span>
+            {% else %}
+              {% if s.first_in %}
+                <span class="badge bg-info-subtle text-info border border-info-subtle">On shift</span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td>
+            {% if s.hours_worked is not none %}
+              <span class="fw-semibold">{{ "%.1f"|format(s.hours_worked) }}h</span>
+            {% elif s.first_in %}
+              <span class="text-muted small">In progress</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if not s.first_in %}
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                Not punched in
+              </span>
+            {% elif s.minutes_late > 0 %}
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                {{ s.minutes_late }} min late
+              </span>
+            {% else %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle">
+                <i class="bi bi-check2 me-1"></i>On time
+              </span>
             {% endif %}
           </td>
           <td>
             {% if s.late_deduction_amount > 0 %}
               <span class="text-danger fw-semibold">PKR {{ "%.0f"|format(s.late_deduction_amount) }}</span>
-            {% elif s.late_deduction_per_minute > 0 %}
-              <span class="text-muted small">—</span>
             {% else %}
-              <span class="text-muted small">Not set</span>
+              <span class="text-muted small">—</span>
             {% endif %}
           </td>
         </tr>
@@ -93,26 +131,31 @@
 </div>
 {% endif %}
 
-<!-- Punch log -->
+{# ── Punch records ── #}
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-white border-0 pt-3">
+  <div class="card-header bg-white border-0 pt-3 pb-2">
     <div class="d-flex justify-content-between align-items-center">
-      <h6 class="fw-bold mb-0">Punch Records <span class="badge bg-secondary ms-2">{{ logs|length }}</span></h6>
+      <h6 class="fw-bold mb-0">
+        Punch Records
+        <span class="badge bg-light text-secondary border ms-1">{{ logs|length }}</span>
+      </h6>
       {% if is_super_admin %}
-        <span class="badge bg-warning text-dark"><i class="bi bi-shield-fill me-1"></i>Super Admin — click time to edit</span>
+        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">
+          <i class="bi bi-shield-fill me-1"></i>Super Admin — click time to edit
+        </span>
       {% endif %}
     </div>
   </div>
   <div class="card-body p-0">
     {% if logs %}
-    <table class="table table-hover mb-0">
+    <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
+          <th>Employee</th>
           <th>Date</th>
           <th>Time</th>
-          <th>Employee</th>
           <th>Type</th>
-          <th>Late</th>
+          <th>Punctuality</th>
           <th>Source</th>
           <th>Sync</th>
         </tr>
@@ -120,7 +163,15 @@
       <tbody>
         {% for l in logs %}
         <tr>
-          <td class="small text-muted">{{ l.punch_time[:10] }}</td>
+          <td>
+            <div class="fw-semibold">{{ l.full_name }}</div>
+            <div class="text-muted small">{{ l.employee_code }}</div>
+          </td>
+          <td class="text-muted small">
+            {{ l.punch_time[:10] | dayname | truncate(3, True, '') }}
+            {{ l.punch_time[8:10] }}
+            {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][l.punch_time[5:7]|int - 1] }}
+          </td>
           <td>
             {% if is_super_admin %}
               <button class="btn btn-sm btn-link p-0 fw-semibold text-dark text-decoration-none"
@@ -134,40 +185,42 @@
             {% endif %}
           </td>
           <td>
-            <div class="fw-semibold">{{ l.full_name }}</div>
-            <div class="text-muted small">{{ l.employee_code }}</div>
-          </td>
-          <td>
             {% if l.punch_type == 'in' %}
-              <span class="badge bg-success">IN</span>
+              <span class="badge bg-success-subtle text-success border border-success-subtle">IN</span>
             {% else %}
-              <span class="badge bg-secondary">OUT</span>
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">OUT</span>
             {% endif %}
           </td>
           <td>
-            {% if l.minutes_late > 0 %}
-              <span class="text-danger fw-semibold">{{ l.minutes_late }} min</span>
-            {% elif l.punch_type == 'in' %}
-              <span class="text-success small"><i class="bi bi-check2"></i> On time</span>
+            {% if l.punch_type == 'in' %}
+              {% if l.minutes_late > 0 %}
+                <span class="text-danger fw-semibold">{{ l.minutes_late }} min late</span>
+              {% else %}
+                <span class="text-success small"><i class="bi bi-check2"></i> On time</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted small">—</span>
             {% endif %}
           </td>
           <td>
             {% if l.punch_source == 'manual' %}
-              <span class="badge bg-warning text-dark">Manual</span>
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Manual</span>
               {% if l.override_reason %}
                 <i class="bi bi-info-circle text-muted ms-1"
                    title="{{ l.override_reason }}"
                    data-bs-toggle="tooltip"></i>
               {% endif %}
+            {% elif l.punch_source == 'face' %}
+              <i class="bi bi-person-bounding-box text-info" title="Face recognition"></i>
             {% else %}
-              <i class="bi bi-fingerprint text-primary"></i>
+              <i class="bi bi-fingerprint text-primary" title="Biometric"></i>
             {% endif %}
           </td>
           <td>
             {% if l.synced %}
-              <i class="bi bi-cloud-check text-success"></i>
+              <i class="bi bi-cloud-check text-success" title="Synced"></i>
             {% else %}
-              <i class="bi bi-cloud-slash text-warning"></i>
+              <i class="bi bi-cloud-slash text-warning" title="Not synced"></i>
             {% endif %}
           </td>
         </tr>
@@ -175,12 +228,15 @@
       </tbody>
     </table>
     {% else %}
-      <div class="text-center text-muted py-4">No records found for the selected period</div>
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-calendar-x fs-2 d-block mb-2"></i>
+        No punch records for the selected period
+      </div>
     {% endif %}
   </div>
 </div>
 
-<!-- Edit punch modal (super admin only) -->
+{# ── Edit punch modal (super admin only) ── #}
 {% if is_super_admin %}
 <div class="modal fade" id="editPunchModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
@@ -218,7 +274,6 @@ const editModal = new bootstrap.Modal(document.getElementById('editPunchModal'))
 
 function openEditPunch(logId, punchTime, punchType) {
   editLogId = logId;
-  // Convert 'YYYY-MM-DD HH:MM:SS' to datetime-local format
   const dt = punchTime.slice(0, 16).replace(' ', 'T');
   document.getElementById('edit-punch-time').value = dt;
   document.getElementById('edit-punch-info').textContent =
@@ -230,23 +285,15 @@ function openEditPunch(logId, punchTime, punchType) {
 async function savePunchEdit() {
   const newTime = document.getElementById('edit-punch-time').value;
   const errDiv  = document.getElementById('edit-error');
-
   if (!newTime) { errDiv.textContent = 'Please select a time'; errDiv.classList.remove('d-none'); return; }
-
   const resp = await fetch(API.editPunch, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({log_id: editLogId, punch_time: newTime}),
   });
   const data = await resp.json();
-
-  if (data.success) {
-    editModal.hide();
-    window.location.reload();
-  } else {
-    errDiv.textContent = data.error || 'Failed to update';
-    errDiv.classList.remove('d-none');
-  }
+  if (data.success) { editModal.hide(); window.location.reload(); }
+  else { errDiv.textContent = data.error || 'Failed to update'; errDiv.classList.remove('d-none'); }
 }
 {% endif %}
 </script>

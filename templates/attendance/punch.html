@@ -147,7 +147,7 @@
         {% if recent %}
         <table class="table table-hover mb-0">
           <thead class="table-light">
-            <tr><th>Employee</th><th>Time</th><th>Type</th><th>Late</th><th>Method</th></tr>
+            <tr><th>Employee</th><th>Time</th><th>Type</th><th>Status</th><th>Method</th></tr>
           </thead>
           <tbody id="recent-tbody">
             {% for p in recent %}
@@ -156,26 +156,35 @@
                 <div class="fw-semibold">{{ p.full_name }}</div>
                 <div class="text-muted small">{{ p.employee_code }}</div>
               </td>
-              <td class="fw-semibold">{{ p.punch_time[11:16] }}</td>
+              <td>
+                <div class="fw-semibold">{{ p.punch_time[11:16] }}</div>
+                <div class="text-muted small">{{ p.punch_time[:10] }}</div>
+              </td>
               <td>
                 {% if p.punch_type == 'in' %}
-                  <span class="badge bg-success">IN</span>
+                  <span class="badge bg-success-subtle text-success border border-success-subtle">IN</span>
                 {% else %}
-                  <span class="badge bg-secondary">OUT</span>
+                  <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">OUT</span>
                 {% endif %}
               </td>
               <td>
-                {% if p.minutes_late > 0 %}
-                  <span class="text-danger fw-semibold">{{ p.minutes_late }}m</span>
+                {% if p.punch_type == 'in' %}
+                  {% if p.minutes_late > 0 %}
+                    <span class="text-danger fw-semibold small">{{ p.minutes_late }}m late</span>
+                  {% else %}
+                    <i class="bi bi-check2 text-success"></i>
+                  {% endif %}
                 {% else %}
-                  <i class="bi bi-check2 text-success"></i>
+                  <span class="text-muted small">—</span>
                 {% endif %}
               </td>
               <td>
                 {% if p.punch_source == 'manual' %}
-                  <span class="badge bg-warning text-dark">Manual</span>
+                  <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Manual</span>
+                {% elif p.punch_source == 'face' %}
+                  <i class="bi bi-person-bounding-box text-info" title="Face"></i>
                 {% else %}
-                  <i class="bi bi-fingerprint text-primary"></i>
+                  <i class="bi bi-fingerprint text-primary" title="Biometric"></i>
                 {% endif %}
               </td>
             </tr>
