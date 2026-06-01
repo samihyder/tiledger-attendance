@@ -150,6 +150,7 @@ def process_manual_day_punch(employee_id: int, override_by: int) -> dict:
 def process_manual_punch(employee_id: int, punch_type: str, punch_time_str: str,
                          override_reason: str, override_by: int) -> dict:
     """Backdated correction — super admin only, no roster enforcement."""
+    punch_time_str = punch_time_str.replace('T', ' ')  # normalize datetime-local input
     try:
         punch_time = datetime.strptime(punch_time_str, '%Y-%m-%d %H:%M')
     except ValueError:
