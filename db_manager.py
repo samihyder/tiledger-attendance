@@ -266,9 +266,15 @@ def update_shift(shift_id: int, data: dict):
 # ── Rosters ───────────────────────────────────────────────────────────────────
 
 def get_roster(roster_id: int):
-    rows = _get('rosters', '*,shifts(shift_name,shift_start,shift_end,grace_minutes)',
+    rows = _get('rosters',
+                '*,shifts(shift_name,shift_start,shift_end,grace_minutes),'
+                'employees(full_name,employee_code)',
                 [('id', f'eq.{roster_id}')], limit=1)
-    return _flat(rows[0], 'shifts') if rows else None
+    return _flat(rows[0], 'shifts', 'employees') if rows else None
+
+
+def get_app_user_by_id(user_id: int):
+    return _one('app_users', 'id,username,full_name,role,active', [('id', f'eq.{user_id}')])
 
 def get_roster_for_date(employee_id: int, roster_date: str):
     rows = _get('rosters', '*,shifts(shift_name,shift_start,shift_end,grace_minutes)',

@@ -326,7 +326,7 @@ def api_grant_manual_access():
     if date_from > date_to:
         return jsonify({'success': False, 'error': 'date_from must be on or before date_to'}), 400
     try:
-        manager = db._one('app_users', 'id,full_name,role', [('id', f'eq.{user_id}')])
+        manager = db.get_app_user_by_id(user_id)
         if not manager or manager['role'] != 'manager':
             return jsonify({'success': False, 'error': 'User not found or not a manager'}), 404
         db.add_manual_entry_grant(user_id, manager['full_name'], date_from, date_to, session['user_id'])

@@ -11,7 +11,7 @@
     <a href="{{ url_for('attendance.punch_screen') }}" class="btn btn-primary">
       <i class="bi bi-fingerprint me-1"></i>Punch Screen
     </a>
-    {% if session.role in ['super_admin', 'manager'] %}
+    {% if session.role == 'super_admin' %}
     <form action="{{ url_for('sync.run_sync') }}" method="POST" class="d-inline">
       <button type="submit" class="btn btn-outline-secondary">
         <i class="bi bi-cloud-upload me-1"></i>Sync
@@ -215,11 +215,13 @@
         {% else %}
           <div class="text-center text-muted py-3 small">No sync history yet</div>
         {% endif %}
+        {% if session.role == 'super_admin' %}
         <div class="p-2">
           <a href="{{ url_for('sync.sync_status') }}" class="btn btn-sm btn-outline-primary w-100">
             Manage Sync
           </a>
         </div>
+        {% endif %}
       </div>
     </div>
   </div>
