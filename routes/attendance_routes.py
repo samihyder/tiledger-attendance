@@ -317,20 +317,22 @@ def manual_grants_page():
 def api_grant_manual_access():
     if session.get('role') != 'super_admin':
         return jsonify({'success': False, 'error': 'Super Admin only'}), 403
-    data      = request.get_json(silent=True) or {}
-    user_id   = int(data.get('user_id', 0))
-    date_from = data.get('date_from', '').strip()
-    date_to   = data.get('date_to', '').strip()
-    if not user_id or not date_from or not date_to:
-        return jsonify({'success': False, 'error': 'user_id, date_from, date_to required'}), 400
-    if date_from > date_to:
-        return jsonify({'success': False, 'error': 'date_from must be on or before date_to'}), 400
+    data       = request.get_json(silent=True) or {}
+    user_id    = int(data.get('user_id', 0))
+    grant_date = data.get('grant_date', '').strip()
+    time_from  = data.get('time_from', '').strip()
+    time_to    = data.get('time_to', '').strip()
+    if not user_id or not grant_date or not time_from or not time_to:
+        return jsonify({'success': False, 'error': 'user_id, grant_date, time_from, time_to required'}), 400
+    if time_from >= time_to:
+        return jsonify({'success': False, 'error': 'time_from must be before time_to'}), 400
     try:
         manager = db.get_app_user_by_id(user_id)
         if not manager or manager['role'] != 'manager':
             return jsonify({'success': False, 'error': 'User not found or not a manager'}), 404
-        db.add_manual_entry_grant(user_id, manager['full_name'], date_from, date_to, session['user_id'])
-        return jsonify({'success': True, 'full_name': manager['full_name'], 'date_from': date_from, 'date_to': date_to})
+        db.add_manual_entry_grant(user_id, manager['full_name'], grant_date, time_from, time_to, session['user_id'])
+        return jsonify({'success': True, 'full_name': manager['full_name'],
+                        'grant_date': grant_date, 'time_from': time_from, 'time_to': time_to})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

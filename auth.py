@@ -85,10 +85,8 @@ def has_permission(permission: str) -> bool:
     # Temporary grant: super_admin can grant manual_attendance access to a manager
     if permission == 'manual_attendance' and user['role'] == 'manager':
         try:
-            from datetime import date as _date
             import db_manager as _db
-            today = _date.today().strftime('%Y-%m-%d')
-            if _db.get_active_manual_grant(user['id'], today):
+            if _db.get_active_manual_grant(user['id']):
                 return True
         except Exception:
             pass  # DB unavailable — deny rather than crash

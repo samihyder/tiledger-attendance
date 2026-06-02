@@ -91,10 +91,22 @@ def create_app() -> Flask:
     def inject_logout_context():
         from flask import session as s
         from datetime import datetime as dt
-        h = dt.now().hour
-        in_shift = h >= 19 or h < 4
+        h    = dt.now().hour
         role = s.get('role', '')
-        return {'logout_locked': in_shift and role in ('store', 'cashier', 'manager')}
+        in_shift = h >= 19 or h < 4
+
+        # For manager: check whether they currently have an active manual-entry grant
+        manager_grant_active = False
+        if role == 'manager' and s.get('user_id'):
+            try:
+                manager_grant_active = bool(db.get_active_manual_grant(s['user_id']))
+            except Exception:
+                pass
+
+        return {
+            'logout_locked':        in_shift and role in ('store', 'cashier', 'manager'),
+            'manager_grant_active': manager_grant_active,
+        }
 
     # Return JSON (not HTML) for any unhandled exception on API endpoints
     @app.errorhandler(Exception)

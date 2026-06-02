@@ -573,7 +573,7 @@ def set_setting(key: str, value: str):
 
 # ── Temporary manual-entry grants ─────────────────────────────────────────────
 # Stored as JSON in app_settings under key 'manual_entry_grants'.
-# Each grant: {user_id, full_name, date_from, date_to, granted_by, granted_at}
+# Each grant: {user_id, full_name, grant_date, time_from, time_to, granted_by, granted_at}
 
 _GRANTS_KEY = 'manual_entry_grants'
 
@@ -589,15 +589,17 @@ def get_manual_entry_grants() -> list:
 def save_manual_entry_grants(grants: list):
     set_setting(_GRANTS_KEY, json.dumps(grants))
 
-def add_manual_entry_grant(user_id: int, full_name: str, date_from: str, date_to: str, granted_by: int):
+def add_manual_entry_grant(user_id: int, full_name: str,
+                           grant_date: str, time_from: str, time_to: str,
+                           granted_by: int):
     grants = get_manual_entry_grants()
-    # Remove any existing grant for the same user
     grants = [g for g in grants if g['user_id'] != user_id]
     grants.append({
         'user_id':    user_id,
         'full_name':  full_name,
-        'date_from':  date_from,
-        'date_to':    date_to,
+        'grant_date': grant_date,
+        'time_from':  time_from,
+        'time_to':    time_to,
         'granted_by': granted_by,
         'granted_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
     })
@@ -607,11 +609,22 @@ def revoke_manual_entry_grant(user_id: int):
     grants = [g for g in get_manual_entry_grants() if g['user_id'] != user_id]
     save_manual_entry_grants(grants)
 
-def get_active_manual_grant(user_id: int, for_date: str) -> dict | None:
-    """Return the grant if it covers for_date, else None."""
+def get_active_manual_grant(user_id: int) -> dict | None:
+    """Return the grant if the current date+time falls within its window, else None."""
+    now = datetime.now()
     for g in get_manual_entry_grants():
-        if g['user_id'] == user_id and g['date_from'] <= for_date <= g['date_to']:
-            return g
+        if g['user_id'] != user_id:
+            continue
+        try:
+            grant_date = g.get('grant_date') or g.get('date_from')  # backwards compat
+            time_from  = g.get('time_from', '00:00')
+            time_to    = g.get('time_to',   '23:59')
+            start = datetime.strptime(f'{grant_date} {time_from}', '%Y-%m-%d %H:%M')
+            end   = datetime.strptime(f'{grant_date} {time_to}',   '%Y-%m-%d %H:%M')
+            if start <= now <= end:
+                return g
+        except Exception:
+            continue
     return None
 
 

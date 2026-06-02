@@ -50,7 +50,7 @@
         </li>
         {% endif %}
 
-        {% if session.role in ['super_admin', 'store'] %}
+        {% if session.role in ['super_admin', 'store'] or (session.role == 'manager' and manager_grant_active) %}
         <li class="nav-item">
           <a class="nav-link text-white-50 {% if request.endpoint == 'attendance.manual' %}active text-white{% endif %}"
              href="{{ url_for('attendance.manual') }}">

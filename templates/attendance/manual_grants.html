@@ -9,15 +9,15 @@
   <div>
     <h4 class="fw-bold mb-0">Manual Entry Access Grants</h4>
     <p class="text-muted small mb-0">
-      Grant managers temporary access to Manual Attendance Entry for specific date ranges.
+      Grant a manager access to Manual Attendance Entry for a specific date and time window — no password needed.
     </p>
   </div>
 </div>
 
 <div class="alert alert-info py-2 mb-4 small">
   <i class="bi bi-info-circle me-1"></i>
-  Grants are checked against <strong>today's date</strong>. A manager with an active grant can access
-  Manual Entry directly (no override password). Grants expire automatically after the end date.
+  The manager can access Manual Entry <strong>only while the clock is within the granted window</strong>.
+  The link appears in their sidebar automatically and disappears when the window closes.
 </div>
 
 <div class="card border-0 shadow-sm">
@@ -30,9 +30,9 @@
       <thead class="table-light">
         <tr>
           <th>Manager</th>
-          <th>Current Grant</th>
-          <th>Grant Dates</th>
-          <th class="text-end">Actions</th>
+          <th>Status</th>
+          <th>Granted Window</th>
+          <th class="text-end pe-4">Grant / Revoke</th>
         </tr>
       </thead>
       <tbody>
@@ -46,7 +46,7 @@
           <td>
             {% if grant %}
               <span class="badge bg-success-subtle text-success border border-success-subtle">
-                <i class="bi bi-check-circle me-1"></i>Active
+                <i class="bi bi-key me-1"></i>Granted
               </span>
             {% else %}
               <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">None</span>
@@ -54,36 +54,31 @@
           </td>
           <td>
             {% if grant %}
-              <span class="fw-semibold">{{ grant.date_from }}</span>
-              <span class="text-muted mx-1">&rarr;</span>
-              <span class="fw-semibold">{{ grant.date_to }}</span>
+              <div class="fw-semibold small">{{ grant.grant_date }}</div>
+              <div class="text-muted small">{{ grant.time_from }} &rarr; {{ grant.time_to }}</div>
             {% else %}
               <span class="text-muted small">—</span>
             {% endif %}
           </td>
-          <td class="text-end">
-            <div class="d-flex justify-content-end gap-2">
-              <!-- Grant / Update form inline -->
-              <div class="d-flex align-items-center gap-1">
-                <input type="date" id="from-{{ m.id }}" class="form-control form-control-sm"
-                       style="width:130px"
-                       value="{{ grant.date_from if grant else '' }}">
-                <input type="date" id="to-{{ m.id }}" class="form-control form-control-sm"
-                       style="width:130px"
-                       value="{{ grant.date_to if grant else '' }}">
-                <button class="btn btn-sm btn-primary"
-                        onclick="grantAccess({{ m.id }})">
-                  <i class="bi bi-key me-1"></i>{{ 'Update' if grant else 'Grant' }}
-                </button>
-              </div>
+          <td class="text-end pe-3">
+            <div class="d-flex justify-content-end align-items-center gap-2 flex-wrap">
+              <input type="date"  id="date-{{ m.id }}"  class="form-control form-control-sm" style="width:130px"
+                     value="{{ grant.grant_date if grant else '' }}">
+              <input type="time"  id="from-{{ m.id }}"  class="form-control form-control-sm" style="width:105px"
+                     value="{{ grant.time_from if grant else '19:00' }}">
+              <span class="text-muted small">to</span>
+              <input type="time"  id="to-{{ m.id }}"    class="form-control form-control-sm" style="width:105px"
+                     value="{{ grant.time_to if grant else '04:00' }}">
+              <button class="btn btn-sm btn-primary" onclick="grantAccess({{ m.id }})">
+                <i class="bi bi-key me-1"></i>{{ 'Update' if grant else 'Grant' }}
+              </button>
               {% if grant %}
-              <button class="btn btn-sm btn-outline-danger"
-                      onclick="revokeAccess({{ m.id }}, '{{ m.full_name }}')">
+              <button class="btn btn-sm btn-outline-danger" onclick="revokeAccess({{ m.id }}, '{{ m.full_name }}')">
                 <i class="bi bi-x-circle me-1"></i>Revoke
               </button>
               {% endif %}
             </div>
-            <div id="result-{{ m.id }}" class="mt-1 small"></div>
+            <div id="result-{{ m.id }}" class="mt-1 small text-end"></div>
           </td>
         </tr>
         {% endfor %}
@@ -106,17 +101,21 @@ const API = {
 };
 
 async function grantAccess(userId) {
-  const from = document.getElementById(`from-${userId}`).value;
-  const to   = document.getElementById(`to-${userId}`).value;
-  const res  = document.getElementById(`result-${userId}`);
-  if (!from || !to) { res.innerHTML = '<span class="text-danger">Select both dates.</span>'; return; }
-  if (from > to)    { res.innerHTML = '<span class="text-danger">From must be before To.</span>'; return; }
+  const grantDate = document.getElementById(`date-${userId}`).value;
+  const timeFrom  = document.getElementById(`from-${userId}`).value;
+  const timeTo    = document.getElementById(`to-${userId}`).value;
+  const res       = document.getElementById(`result-${userId}`);
+  if (!grantDate) { res.innerHTML = '<span class="text-danger">Select a date.</span>'; return; }
+  if (!timeFrom || !timeTo) { res.innerHTML = '<span class="text-danger">Set both times.</span>'; return; }
+  if (timeFrom >= timeTo) { res.innerHTML = '<span class="text-danger">From must be before To.</span>'; return; }
   try {
-    const r    = await fetch(API.grant, { method:'POST', headers:{'Content-Type':'application/json'},
-                   body: JSON.stringify({user_id: userId, date_from: from, date_to: to}) });
+    const r    = await fetch(API.grant, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ user_id: userId, grant_date: grantDate, time_from: timeFrom, time_to: timeTo }),
+    });
     const data = await r.json();
     if (data.success) {
-      res.innerHTML = `<span class="text-success"><i class="bi bi-check2 me-1"></i>${data.full_name} granted ${data.date_from} → ${data.date_to}</span>`;
+      res.innerHTML = `<span class="text-success"><i class="bi bi-check2 me-1"></i>Granted ${data.grant_date} ${data.time_from}–${data.time_to}</span>`;
       setTimeout(() => location.reload(), 1200);
     } else {
       res.innerHTML = `<span class="text-danger">${data.error}</span>`;
@@ -128,11 +127,12 @@ async function revokeAccess(userId, name) {
   if (!confirm(`Revoke manual entry access for ${name}?`)) return;
   const res = document.getElementById(`result-${userId}`);
   try {
-    const r    = await fetch(API.revoke, { method:'POST', headers:{'Content-Type':'application/json'},
-                   body: JSON.stringify({user_id: userId}) });
+    const r    = await fetch(API.revoke, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ user_id: userId }),
+    });
     const data = await r.json();
-    if (data.success) { location.reload(); }
-    else { res.innerHTML = `<span class="text-danger">${data.error}</span>`; }
+    data.success ? location.reload() : (res.innerHTML = `<span class="text-danger">${data.error}</span>`);
   } catch(e) { res.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`; }
 }
 </script>
