@@ -116,6 +116,12 @@
           <div class="text-secondary px-2 small text-uppercase fw-semibold">Admin</div>
         </li>
         <li class="nav-item">
+          <a class="nav-link text-white-50 {% if request.endpoint == 'attendance.manual_grants_page' %}active text-white{% endif %}"
+             href="{{ url_for('attendance.manual_grants_page') }}">
+            <i class="bi bi-key me-2"></i>Manual Entry Grants
+          </a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link text-white-50 {% if request.endpoint == 'attendance.cleanup_page' %}active text-white{% endif %}"
              href="{{ url_for('attendance.cleanup_page') }}">
             <i class="bi bi-trash3 me-2"></i>Data Cleanup

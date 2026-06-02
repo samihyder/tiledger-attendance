@@ -295,6 +295,62 @@ def manual():
 # Data cleanup — super admin only
 # ──────────────────────────────────────────────────────────────────────────────
 
+@attendance_bp.route('/manual-grants', methods=['GET'])
+@login_required
+def manual_grants_page():
+    if session.get('role') != 'super_admin':
+        flash('Super Admin only.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    managers = [u for u in db.get_app_users() if u['role'] == 'manager' and u['active']]
+    grants   = db.get_manual_entry_grants()
+    grants_by_user = {g['user_id']: g for g in grants}
+    return render_template(
+        'attendance/manual_grants.html',
+        managers=managers,
+        grants_by_user=grants_by_user,
+        user=current_user(),
+    )
+
+
+@attendance_bp.route('/api/manual-grants/grant', methods=['POST'])
+@login_required
+def api_grant_manual_access():
+    if session.get('role') != 'super_admin':
+        return jsonify({'success': False, 'error': 'Super Admin only'}), 403
+    data      = request.get_json(silent=True) or {}
+    user_id   = int(data.get('user_id', 0))
+    date_from = data.get('date_from', '').strip()
+    date_to   = data.get('date_to', '').strip()
+    if not user_id or not date_from or not date_to:
+        return jsonify({'success': False, 'error': 'user_id, date_from, date_to required'}), 400
+    if date_from > date_to:
+        return jsonify({'success': False, 'error': 'date_from must be on or before date_to'}), 400
+    try:
+        manager = db._one('app_users', 'id,full_name,role', [('id', f'eq.{user_id}')])
+        if not manager or manager['role'] != 'manager':
+            return jsonify({'success': False, 'error': 'User not found or not a manager'}), 404
+        db.add_manual_entry_grant(user_id, manager['full_name'], date_from, date_to, session['user_id'])
+        return jsonify({'success': True, 'full_name': manager['full_name'], 'date_from': date_from, 'date_to': date_to})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@attendance_bp.route('/api/manual-grants/revoke', methods=['POST'])
+@login_required
+def api_revoke_manual_access():
+    if session.get('role') != 'super_admin':
+        return jsonify({'success': False, 'error': 'Super Admin only'}), 403
+    data    = request.get_json(silent=True) or {}
+    user_id = int(data.get('user_id', 0))
+    if not user_id:
+        return jsonify({'success': False, 'error': 'user_id required'}), 400
+    try:
+        db.revoke_manual_entry_grant(user_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @attendance_bp.route('/cleanup', methods=['GET'])
 @login_required
 def cleanup_page():

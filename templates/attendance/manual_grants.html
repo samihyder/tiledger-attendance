@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}Manual Entry Access Grants{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4">
+  <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-outline-secondary me-3">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="fw-bold mb-0">Manual Entry Access Grants</h4>
+    <p class="text-muted small mb-0">
+      Grant managers temporary access to Manual Attendance Entry for specific date ranges.
+    </p>
+  </div>
+</div>
+
+<div class="alert alert-info py-2 mb-4 small">
+  <i class="bi bi-info-circle me-1"></i>
+  Grants are checked against <strong>today's date</strong>. A manager with an active grant can access
+  Manual Entry directly (no override password). Grants expire automatically after the end date.
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-0 pt-3 pb-2">
+    <h6 class="fw-bold mb-0">Managers</h6>
+  </div>
+  <div class="card-body p-0">
+    {% if managers %}
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Manager</th>
+          <th>Current Grant</th>
+          <th>Grant Dates</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in managers %}
+        {% set grant = grants_by_user.get(m.id) %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ m.full_name }}</div>
+            <div class="text-muted small">{{ m.username }}</div>
+          </td>
+          <td>
+            {% if grant %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle">
+                <i class="bi bi-check-circle me-1"></i>Active
+              </span>
+            {% else %}
+              <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">None</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if grant %}
+              <span class="fw-semibold">{{ grant.date_from }}</span>
+              <span class="text-muted mx-1">&rarr;</span>
+              <span class="fw-semibold">{{ grant.date_to }}</span>
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <div class="d-flex justify-content-end gap-2">
+              <!-- Grant / Update form inline -->
+              <div class="d-flex align-items-center gap-1">
+                <input type="date" id="from-{{ m.id }}" class="form-control form-control-sm"
+                       style="width:130px"
+                       value="{{ grant.date_from if grant else '' }}">
+                <input type="date" id="to-{{ m.id }}" class="form-control form-control-sm"
+                       style="width:130px"
+                       value="{{ grant.date_to if grant else '' }}">
+                <button class="btn btn-sm btn-primary"
+                        onclick="grantAccess({{ m.id }})">
+                  <i class="bi bi-key me-1"></i>{{ 'Update' if grant else 'Grant' }}
+                </button>
+              </div>
+              {% if grant %}
+              <button class="btn btn-sm btn-outline-danger"
+                      onclick="revokeAccess({{ m.id }}, '{{ m.full_name }}')">
+                <i class="bi bi-x-circle me-1"></i>Revoke
+              </button>
+              {% endif %}
+            </div>
+            <div id="result-{{ m.id }}" class="mt-1 small"></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <div class="text-center text-muted py-5">
+        <i class="bi bi-people fs-2 d-block mb-2"></i>No active manager accounts found.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const API = {
+  grant:  '{{ url_for("attendance.api_grant_manual_access") }}',
+  revoke: '{{ url_for("attendance.api_revoke_manual_access") }}',
+};
+
+async function grantAccess(userId) {
+  const from = document.getElementById(`from-${userId}`).value;
+  const to   = document.getElementById(`to-${userId}`).value;
+  const res  = document.getElementById(`result-${userId}`);
+  if (!from || !to) { res.innerHTML = '<span class="text-danger">Select both dates.</span>'; return; }
+  if (from > to)    { res.innerHTML = '<span class="text-danger">From must be before To.</span>'; return; }
+  try {
+    const r    = await fetch(API.grant, { method:'POST', headers:{'Content-Type':'application/json'},
+                   body: JSON.stringify({user_id: userId, date_from: from, date_to: to}) });
+    const data = await r.json();
+    if (data.success) {
+      res.innerHTML = `<span class="text-success"><i class="bi bi-check2 me-1"></i>${data.full_name} granted ${data.date_from} → ${data.date_to}</span>`;
+      setTimeout(() => location.reload(), 1200);
+    } else {
+      res.innerHTML = `<span class="text-danger">${data.error}</span>`;
+    }
+  } catch(e) { res.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`; }
+}
+
+async function revokeAccess(userId, name) {
+  if (!confirm(`Revoke manual entry access for ${name}?`)) return;
+  const res = document.getElementById(`result-${userId}`);
+  try {
+    const r    = await fetch(API.revoke, { method:'POST', headers:{'Content-Type':'application/json'},
+                   body: JSON.stringify({user_id: userId}) });
+    const data = await r.json();
+    if (data.success) { location.reload(); }
+    else { res.innerHTML = `<span class="text-danger">${data.error}</span>`; }
+  } catch(e) { res.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`; }
+}
+</script>
+{% endblock %}

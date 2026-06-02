@@ -565,6 +565,50 @@ def set_setting(key: str, value: str):
     _upsert('app_settings', {'key': key, 'value': value}, on_conflict='key')
 
 
+# ── Temporary manual-entry grants ─────────────────────────────────────────────
+# Stored as JSON in app_settings under key 'manual_entry_grants'.
+# Each grant: {user_id, full_name, date_from, date_to, granted_by, granted_at}
+
+_GRANTS_KEY = 'manual_entry_grants'
+
+def get_manual_entry_grants() -> list:
+    raw = get_setting(_GRANTS_KEY)
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+def save_manual_entry_grants(grants: list):
+    set_setting(_GRANTS_KEY, json.dumps(grants))
+
+def add_manual_entry_grant(user_id: int, full_name: str, date_from: str, date_to: str, granted_by: int):
+    grants = get_manual_entry_grants()
+    # Remove any existing grant for the same user
+    grants = [g for g in grants if g['user_id'] != user_id]
+    grants.append({
+        'user_id':    user_id,
+        'full_name':  full_name,
+        'date_from':  date_from,
+        'date_to':    date_to,
+        'granted_by': granted_by,
+        'granted_at': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+    })
+    save_manual_entry_grants(grants)
+
+def revoke_manual_entry_grant(user_id: int):
+    grants = [g for g in get_manual_entry_grants() if g['user_id'] != user_id]
+    save_manual_entry_grants(grants)
+
+def get_active_manual_grant(user_id: int, for_date: str) -> dict | None:
+    """Return the grant if it covers for_date, else None."""
+    for g in get_manual_entry_grants():
+        if g['user_id'] == user_id and g['date_from'] <= for_date <= g['date_to']:
+            return g
+    return None
+
+
 # ── Encrypted settings (XOR-cipher for API keys stored in app_settings) ───────
 
 def _enc_key() -> bytes:
