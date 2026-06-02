@@ -57,7 +57,7 @@ def verify_override():
     """
     from flask import jsonify
     password = request.json.get('password', '') if request.is_json else request.form.get('password', '')
-    if password == Config.OVERRIDE_PASSWORD:
+    if password == Config.get_override_password():
         session['override_active'] = True
         return ({'valid': True}, 200)
     return ({'valid': False, 'error': 'Incorrect override password'}, 403)
@@ -79,7 +79,7 @@ def request_override():
     if request.method == 'POST':
         password = request.form.get('password', '')
         next_url = request.form.get('next_url', '')
-        if password == Config.OVERRIDE_PASSWORD:
+        if password == Config.get_override_password():
             session['override_active'] = True
             return redirect(next_url or url_for('attendance.punch_screen'))
         flash('Incorrect override password.', 'danger')

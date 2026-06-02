@@ -59,7 +59,7 @@ def api_toggle_manual_mode():
         if _is_manual_mode_today():
             db.disable_manual_mode()
             return jsonify({'success': True, 'manual_mode': False})
-        if data.get('password', '') != Config.OVERRIDE_PASSWORD:
+        if data.get('password', '') != Config.get_override_password():
             return jsonify({'success': False, 'error': 'Incorrect override password'}), 403
         db.enable_manual_mode(today)
         session['override_active'] = True
@@ -461,5 +461,29 @@ def api_cleanup_dedup_run():
     try:
         result = logic.run_deduplication(date_from, date_to)
         return jsonify({'success': True, **result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@attendance_bp.route('/api/change-override-password', methods=['POST'])
+@login_required
+def api_change_override_password():
+    if session.get('role') != 'super_admin':
+        return jsonify({'success': False, 'error': 'Super Admin only'}), 403
+    data        = request.get_json(silent=True) or {}
+    current_pw  = data.get('current_password', '').strip()
+    new_pw      = data.get('new_password', '').strip()
+    confirm_pw  = data.get('confirm_password', '').strip()
+    if not current_pw or not new_pw or not confirm_pw:
+        return jsonify({'success': False, 'error': 'All fields are required'}), 400
+    if current_pw != Config.get_override_password():
+        return jsonify({'success': False, 'error': 'Current password is incorrect'}), 403
+    if new_pw != confirm_pw:
+        return jsonify({'success': False, 'error': 'New passwords do not match'}), 400
+    if len(new_pw) < 6:
+        return jsonify({'success': False, 'error': 'New password must be at least 6 characters'}), 400
+    try:
+        db.set_setting('override_password', new_pw)
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

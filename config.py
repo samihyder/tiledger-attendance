@@ -53,8 +53,20 @@ class Config:
     PUNCH_COOLDOWN_MINUTES = 1   # prevent duplicate punches within N minutes
 
     # Super Admin override secondary password
-    # Set this via environment variable — never hardcode in production
-    OVERRIDE_PASSWORD = os.environ.get('OVERRIDE_PASSWORD', 'override@2026')
+    # DB value (app_settings key 'override_password') takes precedence over env var.
+    _OVERRIDE_PASSWORD_ENV = os.environ.get('OVERRIDE_PASSWORD', 'override@2026')
+
+    @classmethod
+    def get_override_password(cls) -> str:
+        """Read override password from DB (app_settings) or fall back to env var."""
+        try:
+            import db_manager as _db
+            stored = _db.get_setting('override_password')
+            if stored:
+                return stored
+        except Exception:
+            pass
+        return cls._OVERRIDE_PASSWORD_ENV
 
     # Attendance Supabase (DB 1) — primary sync target
     SUPABASE_URL         = os.environ.get('SUPABASE_URL', '')

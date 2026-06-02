@@ -17,6 +17,35 @@
   <strong>Destructive operations.</strong> Deleted records cannot be recovered.
 </div>
 
+{# ── Change override password ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body p-4">
+    <h6 class="fw-bold mb-1"><i class="bi bi-key me-2 text-warning"></i>Override Password</h6>
+    <p class="text-muted small mb-3">
+      Used for: manual mode on punch screen, store manual entry, logout during shift.
+      Default: <code>override@2026</code> (env var) or DB value if previously changed here.
+    </p>
+    <div class="row g-2 align-items-end" style="max-width:560px">
+      <div class="col-4">
+        <label class="form-label small fw-semibold mb-1">Current Password</label>
+        <input type="password" id="overrideCurrent" class="form-control form-control-sm" placeholder="Current">
+      </div>
+      <div class="col-4">
+        <label class="form-label small fw-semibold mb-1">New Password</label>
+        <input type="password" id="overrideNew" class="form-control form-control-sm" placeholder="New">
+      </div>
+      <div class="col-4">
+        <label class="form-label small fw-semibold mb-1">Confirm New</label>
+        <input type="password" id="overrideConfirm" class="form-control form-control-sm" placeholder="Confirm">
+      </div>
+    </div>
+    <div id="overrideResult" class="mt-2 small"></div>
+    <button class="btn btn-warning btn-sm fw-semibold mt-2" onclick="changeOverridePassword()">
+      <i class="bi bi-lock me-1"></i>Change Override Password
+    </button>
+  </div>
+</div>
+
 <div class="row g-4">
 
   {# ── Delete single date ── #}
@@ -150,12 +179,37 @@
 {% block scripts %}
 <script>
 const API = {
-  deleteDate:    '{{ url_for("attendance.api_cleanup_delete_date") }}',
-  deleteRange:   '{{ url_for("attendance.api_cleanup_delete_range") }}',
-  dedupPreview:  '{{ url_for("attendance.api_cleanup_dedup_preview") }}',
-  dedupRun:      '{{ url_for("attendance.api_cleanup_dedup_run") }}',
-  recalcLate:    '{{ url_for("attendance.api_cleanup_recalc_late") }}',
+  deleteDate:       '{{ url_for("attendance.api_cleanup_delete_date") }}',
+  deleteRange:      '{{ url_for("attendance.api_cleanup_delete_range") }}',
+  dedupPreview:     '{{ url_for("attendance.api_cleanup_dedup_preview") }}',
+  dedupRun:         '{{ url_for("attendance.api_cleanup_dedup_run") }}',
+  recalcLate:       '{{ url_for("attendance.api_cleanup_recalc_late") }}',
+  changeOverridePw: '{{ url_for("attendance.api_change_override_password") }}',
 };
+
+// ── Change override password ──────────────────────────────────────────────────
+async function changeOverridePassword() {
+  const current  = document.getElementById('overrideCurrent').value;
+  const newPw    = document.getElementById('overrideNew').value;
+  const confirm  = document.getElementById('overrideConfirm').value;
+  const res      = document.getElementById('overrideResult');
+  if (!current || !newPw || !confirm) { res.innerHTML = '<span class="text-danger">All fields are required.</span>'; return; }
+  try {
+    const r    = await fetch(API.changeOverridePw, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ current_password: current, new_password: newPw, confirm_password: confirm }),
+    });
+    const data = await r.json();
+    if (data.success) {
+      res.innerHTML = '<span class="text-success"><i class="bi bi-check2 me-1"></i>Override password updated successfully.</span>';
+      document.getElementById('overrideCurrent').value = '';
+      document.getElementById('overrideNew').value = '';
+      document.getElementById('overrideConfirm').value = '';
+    } else {
+      res.innerHTML = `<span class="text-danger">${data.error}</span>`;
+    }
+  } catch(e) { res.innerHTML = `<span class="text-danger">Network error: ${e.message}</span>`; }
+}
 
 function showResult(id, html) {
   document.getElementById(id).innerHTML = html;
