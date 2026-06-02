@@ -396,13 +396,25 @@ def delete_punches_for_date(date_str: str) -> int:
 
 
 def get_all_punches_for_dedup(date_from: str, date_to: str) -> list:
-    """Fetch all punch records in a date range for deduplication analysis."""
+    """Fetch all punch records in a date range for deduplication analysis.
+    Normalises punch_time to 'YYYY-MM-DD HH:MM:SS' so strptime calls work."""
     rows = _get('attendance_logs',
                 'id,employee_id,punch_time,punch_type,roster_id,minutes_late',
                 [('punch_time', f'gte.{date_from}T00:00:00'),
                  ('punch_time', f'lte.{date_to}T23:59:59')],
                 order='punch_time.asc')
+    for r in rows:
+        r['punch_time'] = _nt(r.get('punch_time', ''))
     return rows
+
+
+def delete_punches_for_date_range(date_from: str, date_to: str) -> int:
+    """Delete all punch records between two calendar dates inclusive."""
+    rows = _get('attendance_logs', 'id',
+                [('punch_time', f'gte.{date_from}T00:00:00'),
+                 ('punch_time', f'lte.{date_to}T23:59:59')])
+    ids = [r['id'] for r in rows]
+    return delete_punches_by_ids(ids)
 
 def record_punch(employee_id: int, punch_time: str, punch_type: str,
                  punch_source: str, minutes_late: int, roster_id=None,

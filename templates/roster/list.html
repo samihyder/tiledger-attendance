@@ -113,8 +113,12 @@
                 {% endif %}
               </td>
 
-              {# Delete #}
-              <td class="text-end" style="width:10%">
+              {# Edit / Delete #}
+              <td class="text-end" style="width:12%">
+                <a href="{{ url_for('roster.edit_roster', roster_id=r.id) }}"
+                   class="btn btn-sm btn-outline-secondary border-0 me-1" title="Edit">
+                  <i class="bi bi-pencil"></i>
+                </a>
                 <form action="{{ url_for('roster.delete_roster', roster_id=r.id) }}" method="POST"
                       onsubmit="return confirm('Delete this roster entry for {{ r.full_name }}?')"
                       class="d-inline">

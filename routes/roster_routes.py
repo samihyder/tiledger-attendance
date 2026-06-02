@@ -139,6 +139,55 @@ def assign():
     )
 
 
+@roster_bp.route('/<int:roster_id>/edit', methods=['GET', 'POST'])
+@login_required
+@permission_required('roster')
+def edit_roster(roster_id):
+    from datetime import datetime as _dt
+    roster = db.get_roster(roster_id)
+    if not roster:
+        flash('Roster entry not found.', 'danger')
+        return redirect(url_for('roster.list_rosters'))
+
+    # Block edit once the shift has started
+    now = _dt.now()
+    roster_date = roster['roster_date']
+    shift_start_str = roster.get('shift_start', '00:00')
+    sh, sm = map(int, shift_start_str.split(':')[:2])
+    shift_start_dt = _dt.strptime(roster_date, '%Y-%m-%d').replace(hour=sh, minute=sm)
+    if now >= shift_start_dt:
+        flash(
+            f'Shift has already started — use Manual Attendance to correct punches for '
+            f'{roster["full_name"]} on {roster_date}.',
+            'warning'
+        )
+        return redirect(url_for('roster.list_rosters'))
+
+    shifts = db.get_shifts()
+
+    if request.method == 'POST':
+        shift_id   = request.form.get('shift_id', type=int)
+        is_holiday = request.form.get('is_holiday') == '1'
+        notes      = request.form.get('notes', '').strip()
+
+        if not is_holiday and not shift_id:
+            flash('Please select a shift or mark as holiday.', 'danger')
+            return render_template('roster/edit_roster.html', roster=roster, shifts=shifts, user=current_user())
+
+        db.upsert_roster(
+            employee_id=roster['employee_id'],
+            shift_id=shift_id if not is_holiday else None,
+            roster_date=roster_date,
+            is_holiday=is_holiday,
+            notes=notes,
+            created_by=session['user_id'],
+        )
+        flash(f'Roster updated for {roster["full_name"]} on {roster_date}.', 'success')
+        return redirect(url_for('roster.list_rosters'))
+
+    return render_template('roster/edit_roster.html', roster=roster, shifts=shifts, user=current_user())
+
+
 @roster_bp.route('/<int:roster_id>/delete', methods=['POST'])
 @login_required
 @permission_required('roster')

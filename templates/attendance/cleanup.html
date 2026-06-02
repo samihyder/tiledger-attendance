@@ -14,24 +14,48 @@
 
 <div class="alert alert-danger py-2 mb-4">
   <i class="bi bi-exclamation-triangle-fill me-1"></i>
-  <strong>Destructive operations.</strong> Deleted records cannot be recovered. Preview before running.
+  <strong>Destructive operations.</strong> Deleted records cannot be recovered.
 </div>
 
 <div class="row g-4">
 
-  {# ── Delete all punches for a specific date ── #}
+  {# ── Delete single date ── #}
   <div class="col-md-6">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body p-4">
-        <h6 class="fw-bold mb-1"><i class="bi bi-calendar-x me-2 text-danger"></i>Delete All Punches for a Date</h6>
-        <p class="text-muted small mb-3">Remove all attendance records for a specific calendar day (e.g. 31 May testing data).</p>
+        <h6 class="fw-bold mb-1"><i class="bi bi-calendar-x me-2 text-danger"></i>Delete Punches — Single Date</h6>
+        <p class="text-muted small mb-3">Remove all attendance records for one calendar day.</p>
         <div class="mb-3">
           <label class="form-label fw-semibold small">Date</label>
           <input type="date" id="deleteDate" class="form-control form-control-sm" value="2026-05-31">
         </div>
-        <div id="deleteDateResult" class="d-none mb-3"></div>
+        <div id="deleteDateResult" class="mb-3" style="min-height:0"></div>
         <button class="btn btn-danger btn-sm fw-semibold" onclick="deleteDate()">
-          <i class="bi bi-trash me-1"></i>Delete All Records for This Date
+          <i class="bi bi-trash me-1"></i>Delete Records for This Date
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Delete date range ── #}
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body p-4">
+        <h6 class="fw-bold mb-1"><i class="bi bi-calendar-range me-2 text-danger"></i>Delete Punches — Date Range</h6>
+        <p class="text-muted small mb-3">Remove all attendance records between two dates (inclusive).</p>
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label fw-semibold small">From</label>
+            <input type="date" id="deleteRangeFrom" class="form-control form-control-sm" value="2026-06-01">
+          </div>
+          <div class="col-6">
+            <label class="form-label fw-semibold small">To</label>
+            <input type="date" id="deleteRangeTo" class="form-control form-control-sm" value="2026-06-02">
+          </div>
+        </div>
+        <div id="deleteRangeResult" class="mb-3" style="min-height:0"></div>
+        <button class="btn btn-danger btn-sm fw-semibold" onclick="deleteRange()">
+          <i class="bi bi-trash me-1"></i>Delete Records for This Range
         </button>
       </div>
     </div>
@@ -56,7 +80,7 @@
             <input type="date" id="dedupTo" class="form-control form-control-sm">
           </div>
         </div>
-        <div id="dedupPreviewResult" class="d-none mb-3"></div>
+        <div id="dedupPreviewResult" class="mb-3" style="min-height:0"></div>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-warning btn-sm fw-semibold" onclick="dedupPreview()">
             <i class="bi bi-eye me-1"></i>Preview
@@ -70,25 +94,25 @@
   </div>
 
   {# ── Recalculate late minutes ── #}
-  <div class="col-md-12">
-    <div class="card border-0 shadow-sm">
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-body p-4">
         <h6 class="fw-bold mb-1"><i class="bi bi-clock-history me-2 text-info"></i>Recalculate Late Minutes</h6>
         <p class="text-muted small mb-3">
-          Re-compute <strong>minutes_late</strong> for every punch-in that has a roster, using the assigned shift start
-          time and grace period. Run this after changing a shift definition or after deduplication.
+          Re-compute <strong>minutes_late</strong> for every punch-in that has a roster, using the
+          assigned shift start time and grace period.
         </p>
         <div class="row g-2 mb-3">
-          <div class="col-auto">
+          <div class="col-6">
             <label class="form-label fw-semibold small">From</label>
             <input type="date" id="recalcFrom" class="form-control form-control-sm">
           </div>
-          <div class="col-auto">
+          <div class="col-6">
             <label class="form-label fw-semibold small">To</label>
             <input type="date" id="recalcTo" class="form-control form-control-sm">
           </div>
         </div>
-        <div id="recalcResult" class="d-none mb-3"></div>
+        <div id="recalcResult" class="mb-3" style="min-height:0"></div>
         <button class="btn btn-info btn-sm fw-semibold text-white" onclick="recalcLate()">
           <i class="bi bi-arrow-repeat me-1"></i>Recalculate Late Minutes
         </button>
@@ -98,25 +122,27 @@
 
 </div>
 
-{# ── Preview detail table ── #}
+{# ── Dedup preview detail table ── #}
 <div id="dedupDetailCard" class="card border-0 shadow-sm mt-4 d-none">
   <div class="card-header bg-white border-0 pt-3 pb-2">
     <h6 class="fw-bold mb-0">Preview — Records to be cleaned</h6>
   </div>
   <div class="card-body p-0">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr>
-          <th>Shift Date</th>
-          <th>Employee ID</th>
-          <th>Keep IN</th>
-          <th>Keep OUT</th>
-          <th>Total Punches</th>
-          <th>Will Delete</th>
-        </tr>
-      </thead>
-      <tbody id="dedupDetailBody"></tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr>
+            <th>Shift Date</th>
+            <th>Employee ID</th>
+            <th>Keep IN</th>
+            <th>Keep OUT</th>
+            <th>Total</th>
+            <th>To Delete</th>
+          </tr>
+        </thead>
+        <tbody id="dedupDetailBody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -125,67 +151,81 @@
 <script>
 const API = {
   deleteDate:    '{{ url_for("attendance.api_cleanup_delete_date") }}',
+  deleteRange:   '{{ url_for("attendance.api_cleanup_delete_range") }}',
   dedupPreview:  '{{ url_for("attendance.api_cleanup_dedup_preview") }}',
   dedupRun:      '{{ url_for("attendance.api_cleanup_dedup_run") }}',
   recalcLate:    '{{ url_for("attendance.api_cleanup_recalc_late") }}',
 };
 
-// ── Delete by date ──────────────────────────────────────────────────────────
-async function deleteDate() {
-  const date = document.getElementById('deleteDate').value;
-  if (!date) return;
-  if (!confirm(`Delete ALL punch records for ${date}? This cannot be undone.`)) return;
-  const res = document.getElementById('deleteDateResult');
-  res.className = 'mb-3';
-  res.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Deleting…</span>';
-  try {
-    const r = await fetch(API.deleteDate, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ date }),
-    });
-    const data = await r.json();
-    if (data.success) {
-      res.innerHTML = `<div class="alert alert-success py-2 small"><i class="bi bi-check2 me-1"></i>Deleted <strong>${data.deleted}</strong> records for ${data.date}.</div>`;
-    } else {
-      res.innerHTML = `<div class="alert alert-danger py-2 small">${data.error}</div>`;
-    }
-  } catch(e) {
-    res.innerHTML = `<div class="alert alert-danger py-2 small">Network error: ${e.message}</div>`;
-  }
+function showResult(id, html) {
+  document.getElementById(id).innerHTML = html;
 }
 
-// ── Dedup preview ───────────────────────────────────────────────────────────
+function spinner(id, msg) {
+  showResult(id, `<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>${msg}</span>`);
+}
+
+function ok(id, msg)  { showResult(id, `<div class="alert alert-success py-2 mb-0 small">${msg}</div>`); }
+function err(id, msg) { showResult(id, `<div class="alert alert-danger  py-2 mb-0 small">${msg}</div>`); }
+function warn(id, msg){ showResult(id, `<div class="alert alert-warning py-2 mb-0 small">${msg}</div>`); }
+
+// ── Delete single date ───────────────────────────────────────────────────────
+async function deleteDate() {
+  const date = document.getElementById('deleteDate').value;
+  if (!date) { err('deleteDateResult', 'Please select a date.'); return; }
+  if (!confirm(`Delete ALL punch records for ${date}? This cannot be undone.`)) return;
+  spinner('deleteDateResult', 'Deleting…');
+  try {
+    const r    = await fetch(API.deleteDate, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date}) });
+    const data = await r.json();
+    data.success
+      ? ok ('deleteDateResult', `<i class="bi bi-check2 me-1"></i>Deleted <strong>${data.deleted}</strong> records for <strong>${data.date}</strong>.`)
+      : err('deleteDateResult', data.error);
+  } catch(e) { err('deleteDateResult', `Network error: ${e.message}`); }
+}
+
+// ── Delete date range ────────────────────────────────────────────────────────
+async function deleteRange() {
+  const from = document.getElementById('deleteRangeFrom').value;
+  const to   = document.getElementById('deleteRangeTo').value;
+  if (!from || !to) { err('deleteRangeResult', 'Please select both dates.'); return; }
+  if (from > to)    { err('deleteRangeResult', '"From" date must be on or before "To" date.'); return; }
+  if (!confirm(`Delete ALL punch records from ${from} to ${to}? This cannot be undone.`)) return;
+  spinner('deleteRangeResult', 'Deleting…');
+  try {
+    const r    = await fetch(API.deleteRange, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date_from:from, date_to:to}) });
+    const data = await r.json();
+    data.success
+      ? ok ('deleteRangeResult', `<i class="bi bi-check2 me-1"></i>Deleted <strong>${data.deleted}</strong> records from <strong>${data.date_from}</strong> to <strong>${data.date_to}</strong>.`)
+      : err('deleteRangeResult', data.error);
+  } catch(e) { err('deleteRangeResult', `Network error: ${e.message}`); }
+}
+
+// ── Dedup preview ────────────────────────────────────────────────────────────
 let lastPlan = null;
 async function dedupPreview() {
   const from = document.getElementById('dedupFrom').value;
   const to   = document.getElementById('dedupTo').value;
-  if (!from || !to) { alert('Select both date range fields.'); return; }
-  const res = document.getElementById('dedupPreviewResult');
-  res.className = 'mb-3';
-  res.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Analysing…</span>';
+  if (!from || !to) { err('dedupPreviewResult', 'Select both date fields.'); return; }
+  spinner('dedupPreviewResult', 'Analysing…');
   document.getElementById('dedupDetailCard').classList.add('d-none');
   document.getElementById('dedupRunBtn').disabled = true;
   lastPlan = null;
 
   try {
-    const r = await fetch(API.dedupPreview, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ date_from: from, date_to: to }),
-    });
+    const r    = await fetch(API.dedupPreview, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date_from:from, date_to:to}) });
     const data = await r.json();
-    if (!data.success) { res.innerHTML = `<div class="alert alert-danger py-2 small">${data.error}</div>`; return; }
+    if (!data.success) { err('dedupPreviewResult', data.error); return; }
 
     lastPlan = data;
     if (data.to_delete === 0) {
-      res.innerHTML = `<div class="alert alert-success py-2 small"><i class="bi bi-check2 me-1"></i>No duplicates found across ${data.groups} shift-days.</div>`;
+      ok('dedupPreviewResult', `<i class="bi bi-check2 me-1"></i>No duplicates found across ${data.groups} shift-days.`);
     } else {
-      res.innerHTML = `<div class="alert alert-warning py-2 small">
-        <strong>${data.to_delete}</strong> duplicate records will be deleted across
-        <strong>${data.groups}</strong> shift-days.
-        <strong>${data.to_update}</strong> late-minute values will be corrected.
-      </div>`;
+      warn('dedupPreviewResult',
+        `<strong>${data.to_delete}</strong> duplicate records across <strong>${data.groups}</strong> shift-days will be deleted. ` +
+        `<strong>${data.to_update}</strong> late-minute values will be corrected.`);
       document.getElementById('dedupRunBtn').disabled = false;
-      // Render detail table
+
       const tbody = document.getElementById('dedupDetailBody');
       tbody.innerHTML = '';
       (data.group_detail || []).forEach(g => {
@@ -194,7 +234,7 @@ async function dedupPreview() {
           <tr class="${delCount > 0 ? '' : 'table-success'}">
             <td>${g.shift_date}</td>
             <td class="text-muted">#${g.employee_id}</td>
-            <td>${g.kept_in ? g.kept_in.slice(11,16) : '<span class="text-muted">—</span>'}</td>
+            <td>${g.kept_in  ? g.kept_in.slice(11,16)  : '<span class="text-muted">—</span>'}</td>
             <td>${g.kept_out ? g.kept_out.slice(11,16) : '<span class="text-muted">—</span>'}</td>
             <td>${g.total}</td>
             <td>${delCount > 0 ? `<span class="text-danger fw-semibold">${delCount}</span>` : '<span class="text-success">0</span>'}</td>
@@ -202,68 +242,46 @@ async function dedupPreview() {
       });
       document.getElementById('dedupDetailCard').classList.remove('d-none');
     }
-  } catch(e) {
-    res.innerHTML = `<div class="alert alert-danger py-2 small">Network error: ${e.message}</div>`;
-  }
+  } catch(e) { err('dedupPreviewResult', `Network error: ${e.message}`); }
 }
 
-// ── Dedup run ───────────────────────────────────────────────────────────────
+// ── Dedup run ────────────────────────────────────────────────────────────────
 async function dedupRun() {
   if (!lastPlan || lastPlan.to_delete === 0) return;
-  if (!confirm(`Delete ${lastPlan.to_delete} duplicate punch records and correct ${lastPlan.to_update} late-minute values? This cannot be undone.`)) return;
+  if (!confirm(`Delete ${lastPlan.to_delete} duplicate punch records? This cannot be undone.`)) return;
   const from = document.getElementById('dedupFrom').value;
   const to   = document.getElementById('dedupTo').value;
-  const res = document.getElementById('dedupPreviewResult');
+  spinner('dedupPreviewResult', 'Running…');
   document.getElementById('dedupRunBtn').disabled = true;
-  res.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Running…</span>';
 
   try {
-    const r = await fetch(API.dedupRun, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ date_from: from, date_to: to }),
-    });
+    const r    = await fetch(API.dedupRun, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date_from:from, date_to:to}) });
     const data = await r.json();
     if (data.success) {
-      res.innerHTML = `<div class="alert alert-success py-2 small">
-        <i class="bi bi-check2-circle me-1"></i>
-        Done: deleted <strong>${data.deleted}</strong> duplicates,
-        corrected <strong>${data.updated}</strong> late-minute values
-        across <strong>${data.groups}</strong> shift-days.
-      </div>`;
+      ok('dedupPreviewResult',
+        `<i class="bi bi-check2-circle me-1"></i>Done: deleted <strong>${data.deleted}</strong> duplicates, ` +
+        `corrected <strong>${data.updated}</strong> late-minute values across <strong>${data.groups}</strong> shift-days.`);
       document.getElementById('dedupDetailCard').classList.add('d-none');
       lastPlan = null;
     } else {
-      res.innerHTML = `<div class="alert alert-danger py-2 small">${data.error}</div>`;
+      err('dedupPreviewResult', data.error);
     }
-  } catch(e) {
-    res.innerHTML = `<div class="alert alert-danger py-2 small">Network error: ${e.message}</div>`;
-  }
+  } catch(e) { err('dedupPreviewResult', `Network error: ${e.message}`); }
 }
 
 // ── Recalculate late minutes ─────────────────────────────────────────────────
 async function recalcLate() {
   const from = document.getElementById('recalcFrom').value;
   const to   = document.getElementById('recalcTo').value;
-  if (!from || !to) { alert('Select both date fields.'); return; }
-  const res = document.getElementById('recalcResult');
-  res.className = 'mb-3';
-  res.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Recalculating…</span>';
+  if (!from || !to) { err('recalcResult', 'Select both date fields.'); return; }
+  spinner('recalcResult', 'Recalculating…');
   try {
-    const r = await fetch(API.recalcLate, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ date_from: from, date_to: to }),
-    });
+    const r    = await fetch(API.recalcLate, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date_from:from, date_to:to}) });
     const data = await r.json();
-    if (data.success) {
-      res.innerHTML = `<div class="alert alert-info py-2 small">
-        <i class="bi bi-check2 me-1"></i>Updated <strong>${data.updated}</strong> punch-in records with corrected late minutes.
-      </div>`;
-    } else {
-      res.innerHTML = `<div class="alert alert-danger py-2 small">${data.error}</div>`;
-    }
-  } catch(e) {
-    res.innerHTML = `<div class="alert alert-danger py-2 small">Network error: ${e.message}</div>`;
-  }
+    data.success
+      ? ok ('recalcResult', `<i class="bi bi-check2 me-1"></i>Updated <strong>${data.updated}</strong> punch-in records with corrected late minutes.`)
+      : err('recalcResult', data.error);
+  } catch(e) { err('recalcResult', `Network error: ${e.message}`); }
 }
 </script>
 {% endblock %}

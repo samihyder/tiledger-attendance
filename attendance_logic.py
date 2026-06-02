@@ -51,6 +51,35 @@ def check_roster_for_punch(employee_id: int, date_str: str) -> tuple[dict | None
     return roster, None
 
 
+def _get_roster_for_punch(employee_id: int, today: str, punch_type: str):
+    """
+    Look up the roster for punch validation.
+    For OUT punches that cross midnight (night shift), also checks yesterday.
+    Returns (roster_or_None, block_error_or_None).
+    Roster blocking is only applied for punch-IN.
+    """
+    from datetime import timedelta as _td
+    roster = db.get_roster_for_date(employee_id, today)
+
+    # Night-shift OUT: if punching out before 04:00 and no roster today, try yesterday
+    now_h = datetime.now().hour
+    if not roster and punch_type == 'out' and now_h < 4:
+        prev = (datetime.strptime(today, '%Y-%m-%d') - _td(days=1)).strftime('%Y-%m-%d')
+        roster = db.get_roster_for_date(employee_id, prev)
+
+    if not roster:
+        if punch_type == 'in':
+            emp = db.get_employee(employee_id)
+            name = emp['full_name'] if emp else 'Employee'
+            return None, f'{name} is not scheduled to work today — contact your manager.'
+        return None, None   # OUT with no roster: allow (shift already started)
+
+    if roster['is_holiday'] and punch_type == 'in':
+        return roster, 'Today is a scheduled day off — no punch required.'
+
+    return roster, None
+
+
 def process_biometric_punch(employee_id: int) -> dict:
     now = datetime.now()
     today = now.strftime('%Y-%m-%d')
@@ -59,6 +88,10 @@ def process_biometric_punch(employee_id: int) -> dict:
     employee = db.get_employee(employee_id)
     if not employee:
         return {'success': False, 'error': 'Employee not found'}
+
+    # Deactivated check
+    if not employee.get('active', True):
+        return {'success': False, 'error': f'{employee["full_name"]} is deactivated — contact your manager'}
 
     # Cooldown
     last = db.get_last_punch(employee_id, today)
@@ -73,20 +106,19 @@ def process_biometric_punch(employee_id: int) -> dict:
     if punch_type is None:
         return {'success': False, 'error': f'{employee["full_name"]} has already completed their shift today (punched in and out)'}
     if punch_type == 'in':
-        # Verify punch_type=in makes sense given a cooldown check
         last = db.get_last_punch(employee_id, today)
         if last and last['punch_type'] == 'in':
             return {'success': False, 'error': f'{employee["full_name"]} is already punched in — please punch out first'}
 
-    # Roster enforcement
-    roster, roster_error = check_roster_for_punch(employee_id, today)
-    if roster_error and not roster:
+    # Roster enforcement (blocks punch-IN only; OUT allowed across midnight for night shift)
+    roster, roster_error = _get_roster_for_punch(employee_id, today, punch_type)
+    if roster_error:
         return {'success': False, 'error': roster_error}
 
     minutes_late = 0
     roster_id = roster['id'] if roster else None
 
-    if roster and not roster['is_holiday'] and punch_type == 'in':
+    if roster and not roster.get('is_holiday') and punch_type == 'in':
         minutes_late = calculate_minutes_late(now, roster['shift_start'], roster['grace_minutes'])
 
     log_id = db.record_punch(
@@ -122,6 +154,10 @@ def process_manual_day_punch(employee_id: int, override_by: int) -> dict:
     if not employee:
         return {'success': False, 'error': 'Employee not found'}
 
+    # Deactivated check
+    if not employee.get('active', True):
+        return {'success': False, 'error': f'{employee["full_name"]} is deactivated — contact your manager'}
+
     # Check shift status
     punch_type = determine_punch_type(employee_id, today)
     if punch_type is None:
@@ -139,15 +175,15 @@ def process_manual_day_punch(employee_id: int, override_by: int) -> dict:
         if elapsed < Config.PUNCH_COOLDOWN_MINUTES:
             return {'success': False, 'error': f'{employee["full_name"]} already punched {int(elapsed * 60)}s ago — wait a moment'}
 
-    # Roster enforcement
-    roster, roster_error = check_roster_for_punch(employee_id, today)
-    if roster_error and not roster:
+    # Roster enforcement (blocks punch-IN only)
+    roster, roster_error = _get_roster_for_punch(employee_id, today, punch_type)
+    if roster_error:
         return {'success': False, 'error': roster_error}
 
     minutes_late = 0
     roster_id = roster['id'] if roster else None
 
-    if roster and not roster['is_holiday'] and punch_type == 'in':
+    if roster and not roster.get('is_holiday') and punch_type == 'in':
         minutes_late = calculate_minutes_late(now, roster['shift_start'], roster['grace_minutes'])
 
     log_id = db.record_punch(

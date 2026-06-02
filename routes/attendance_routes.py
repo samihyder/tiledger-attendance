@@ -320,6 +320,23 @@ def api_cleanup_delete_date():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@attendance_bp.route('/api/cleanup/delete-range', methods=['POST'])
+@login_required
+def api_cleanup_delete_range():
+    if session.get('role') != 'super_admin':
+        return jsonify({'success': False, 'error': 'Super Admin only'}), 403
+    data = request.get_json(silent=True) or {}
+    date_from = data.get('date_from', '').strip()
+    date_to   = data.get('date_to', '').strip()
+    if not date_from or not date_to:
+        return jsonify({'success': False, 'error': 'date_from and date_to are required'}), 400
+    try:
+        count = db.delete_punches_for_date_range(date_from, date_to)
+        return jsonify({'success': True, 'deleted': count, 'date_from': date_from, 'date_to': date_to})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @attendance_bp.route('/api/cleanup/dedup-preview', methods=['POST'])
 @login_required
 def api_cleanup_dedup_preview():
