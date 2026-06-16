@@ -31,7 +31,10 @@ def login():
             session['login_time'] = datetime.now().isoformat()
             db.update_last_login(user['id'])
             flash(f'Welcome back, {user["full_name"]}!', 'success')
-            next_url = request.args.get('next')
+            next_url = request.args.get('next', '')
+            # Only allow relative paths to prevent open redirect
+            if next_url and (next_url.startswith('//') or '://' in next_url):
+                next_url = ''
             # Punch-only roles land directly on the punch screen
             if user['role'] in ('store', 'cashier'):
                 return redirect(next_url or url_for('attendance.punch_screen'))

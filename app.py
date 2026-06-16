@@ -16,6 +16,7 @@ if _tz:
         pass  # Windows — no tzset
 
 from flask import Flask
+from flask_compress import Compress
 from config import Config
 import db_manager as db
 import biometric_service as bio
@@ -26,6 +27,8 @@ def create_app() -> Flask:
     app.config.from_object(Config)
     app.secret_key = Config.SECRET_KEY
     app.url_map.strict_slashes = False  # accept /employees and /employees/ without redirect
+
+    Compress(app)
 
     # Jinja2 globals
     app.jinja_env.globals['enumerate'] = enumerate
@@ -83,8 +86,8 @@ def create_app() -> Flask:
             return
         if now >= today_cutoff and login_time < today_cutoff:
             s.clear()
-            fl('Shift ended — you have been automatically logged out at 04:00 AM.', 'info')
-            return redir(uf('auth.login'))
+            fl('New day started — your previous session ended at 04:00 AM. Please log in to continue.', 'info')
+            return redir(uf('auth.login', next=req.path))
 
     # ── Template context: logout lock flag ───────────────────────────────────
     @app.context_processor
@@ -103,10 +106,27 @@ def create_app() -> Flask:
             except Exception:
                 pass
 
+        pending_ot_count = 0
+        pending_leave_count = 0
+        if role in ('super_admin', 'manager') and s.get('user_id'):
+            try:
+                pending_ot_count    = db.get_pending_ot_count()
+                pending_leave_count = db.get_pending_leave_count()
+            except Exception:
+                pass
+
         return {
             'logout_locked':        in_shift and role in ('store', 'cashier', 'manager'),
             'manager_grant_active': manager_grant_active,
+            'pending_ot_count':     pending_ot_count,
+            'pending_leave_count':  pending_leave_count,
         }
+
+    # Friendly 404 page
+    @app.errorhandler(404)
+    def not_found(e):
+        from flask import render_template as rt
+        return rt('404.html', message=str(e)), 404
 
     # Return JSON (not HTML) for any unhandled exception on API endpoints
     @app.errorhandler(Exception)

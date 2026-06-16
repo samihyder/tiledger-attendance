@@ -80,6 +80,21 @@ def _get_roster_for_punch(employee_id: int, today: str, punch_type: str):
     return roster, None
 
 
+def _calc_ot_minutes(punch_time_dt: datetime, roster: dict) -> int:
+    """Return minutes of overtime if punch_time_dt exceeds shift_end + OT threshold."""
+    shift_end_str = roster.get('shift_end')
+    if not shift_end_str:
+        return 0
+    threshold = int(db.get_setting('ot_threshold_minutes') or 30)
+    h, m = map(int, shift_end_str.split(':')[:2])
+    shift_end_dt = punch_time_dt.replace(hour=h, minute=m, second=0, microsecond=0)
+    # Night shift: shift_end on same calendar day might be before punch (next day morning)
+    if shift_end_dt < punch_time_dt - timedelta(hours=12):
+        shift_end_dt += timedelta(days=1)
+    diff_mins = int((punch_time_dt - shift_end_dt).total_seconds() / 60)
+    return diff_mins if diff_mins > threshold else 0
+
+
 def process_biometric_punch(employee_id: int) -> dict:
     now = datetime.now()
     today = now.strftime('%Y-%m-%d')
@@ -130,6 +145,20 @@ def process_biometric_punch(employee_id: int) -> dict:
         roster_id=roster_id,
     )
 
+    ot_minutes = 0
+    if punch_type == 'out' and roster and not roster.get('is_holiday'):
+        ot_minutes = _calc_ot_minutes(now, roster)
+        if ot_minutes > 0:
+            db.update_punch_overtime(log_id, ot_minutes)
+            db.create_overtime_request(
+                employee_id=employee_id,
+                attendance_log_id=log_id,
+                ot_date=today,
+                shift_end_time=roster['shift_end'],
+                actual_out_time=punch_time_str,
+                ot_minutes=ot_minutes,
+            )
+
     return {
         'success': True,
         'log_id': log_id,
@@ -140,6 +169,7 @@ def process_biometric_punch(employee_id: int) -> dict:
         'punch_time': punch_time_str,
         'minutes_late': minutes_late,
         'on_time': minutes_late == 0,
+        'ot_minutes': ot_minutes,
         'shift_start': roster['shift_start'][:5] if roster and not roster['is_holiday'] else None,
     }
 
@@ -197,6 +227,20 @@ def process_manual_day_punch(employee_id: int, override_by: int) -> dict:
         override_by=override_by,
     )
 
+    ot_minutes = 0
+    if punch_type == 'out' and roster and not roster.get('is_holiday'):
+        ot_minutes = _calc_ot_minutes(now, roster)
+        if ot_minutes > 0:
+            db.update_punch_overtime(log_id, ot_minutes)
+            db.create_overtime_request(
+                employee_id=employee_id,
+                attendance_log_id=log_id,
+                ot_date=today,
+                shift_end_time=roster['shift_end'],
+                actual_out_time=punch_time_str,
+                ot_minutes=ot_minutes,
+            )
+
     return {
         'success': True,
         'log_id': log_id,
@@ -207,6 +251,7 @@ def process_manual_day_punch(employee_id: int, override_by: int) -> dict:
         'punch_time': punch_time_str,
         'minutes_late': minutes_late,
         'on_time': minutes_late == 0,
+        'ot_minutes': ot_minutes,
         'shift_start': roster['shift_start'][:5] if roster and not roster['is_holiday'] else None,
     }
 
@@ -233,9 +278,10 @@ def process_manual_punch(employee_id: int, punch_type: str, punch_time_str: str,
         minutes_late = calculate_minutes_late(punch_time, roster['shift_start'], roster['grace_minutes'])
         roster_id = roster['id']
 
+    punch_time_normalized = punch_time.strftime('%Y-%m-%d %H:%M:%S')
     log_id = db.record_punch(
         employee_id=employee_id,
-        punch_time=punch_time.strftime('%Y-%m-%d %H:%M:%S'),
+        punch_time=punch_time_normalized,
         punch_type=punch_type,
         punch_source='manual',
         minutes_late=minutes_late,
@@ -244,12 +290,27 @@ def process_manual_punch(employee_id: int, punch_type: str, punch_time_str: str,
         override_by=override_by,
     )
 
+    ot_minutes = 0
+    if punch_type == 'out' and roster and not roster.get('is_holiday'):
+        ot_minutes = _calc_ot_minutes(punch_time, roster)
+        if ot_minutes > 0:
+            db.update_punch_overtime(log_id, ot_minutes)
+            db.create_overtime_request(
+                employee_id=employee_id,
+                attendance_log_id=log_id,
+                ot_date=today,
+                shift_end_time=roster.get('shift_end', ''),
+                actual_out_time=punch_time_normalized,
+                ot_minutes=ot_minutes,
+            )
+
     return {
         'success': True,
         'log_id': log_id,
         'employee_name': employee['full_name'],
         'punch_type': punch_type,
         'minutes_late': minutes_late,
+        'ot_minutes': ot_minutes,
     }
 
 
@@ -261,10 +322,11 @@ def get_daily_summary(date_str: str) -> list[dict]:
     """
     from datetime import timedelta
     next_day = (datetime.strptime(date_str, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
-    logs = db.get_attendance_logs(date_from=date_str, date_to=date_str)
+    logs, _ = db.get_attendance_logs(date_from=date_str, date_to=date_str)
     # Grab next-day early-morning punches (night shift overlap) — OUT only
+    _next_logs, _ = db.get_attendance_logs(date_from=next_day, date_to=next_day)
     next_morn = [
-        l for l in db.get_attendance_logs(date_from=next_day, date_to=next_day)
+        l for l in _next_logs
         if l['punch_time'][11:13] < '04' and l['punch_type'] == 'out'
     ]
     # Only add these OUT punches for employees who already have an IN on date_str

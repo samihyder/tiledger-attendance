@@ -226,7 +226,7 @@
 
 {% endblock %}
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/face-api.min.js') }}"></script>
 <script>
 const API = {
   biometricPunch:  '{{ url_for("attendance.api_biometric_punch") }}',
@@ -367,7 +367,7 @@ function resetBio() {
 }
 
 // ── face-api.js setup ──────────────────────────────────────────────────────
-const FACE_MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+const FACE_MODEL_URL = '{{ url_for("static", filename="models") }}';
 let faceApiReady = false;
 
 async function loadFaceModels() {

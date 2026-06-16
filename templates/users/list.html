@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+{% block title %}User Management — TiLedger{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0 fw-bold">User Management</h4>
+    <div class="text-muted small">Manage system login accounts and permissions</div>
+  </div>
+  <button class="btn btn-primary" onclick="showCreateModal()">
+    <i class="bi bi-plus-lg me-1"></i>New User
+  </button>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Username</th>
+            <th>Full Name</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Last Login</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr id="user-row-{{ u.id }}">
+            <td class="fw-semibold font-monospace">{{ u.username }}</td>
+            <td>{{ u.full_name }}</td>
+            <td>
+              {% set role_colors = {'super_admin':'primary','manager':'success','system_admin':'info','store':'warning','cashier':'secondary'} %}
+              <span class="badge bg-{{ role_colors.get(u.role, 'secondary') }}">
+                {{ u.role | replace('_', ' ') | title }}
+              </span>
+            </td>
+            <td>
+              {% if u.active %}
+              <span class="badge bg-success-subtle text-success-emphasis">Active</span>
+              {% else %}
+              <span class="badge bg-danger-subtle text-danger-emphasis">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+            <td class="text-muted small">{{ u.last_login[:16] if u.last_login else 'Never' }}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-secondary me-1"
+                      onclick="showPasswordModal({{ u.id }}, '{{ u.username|e }}')">
+                <i class="bi bi-key"></i>
+              </button>
+              {% if u.id != user.id %}
+              {% if u.active %}
+              <button class="btn btn-sm btn-outline-danger"
+                      onclick="toggleUser({{ u.id }}, false, this)">
+                <i class="bi bi-person-dash"></i>
+              </button>
+              {% else %}
+              <button class="btn btn-sm btn-outline-success"
+                      onclick="toggleUser({{ u.id }}, true, this)">
+                <i class="bi bi-person-check"></i>
+              </button>
+              {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center py-4 text-muted">No users found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Create user modal -->
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold"><i class="bi bi-person-plus me-2"></i>New User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Username</label>
+          <input type="text" id="newUsername" class="form-control" placeholder="e.g. john.doe">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Full Name</label>
+          <input type="text" id="newFullName" class="form-control" placeholder="John Doe">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Role</label>
+          <select id="newRole" class="form-select">
+            {% for role in valid_roles %}
+            <option value="{{ role }}">{{ role | replace('_', ' ') | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Password</label>
+          <input type="password" id="newPassword" class="form-control" placeholder="Min. 6 characters">
+        </div>
+        <div id="createError" class="text-danger small d-none"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createUser()">
+          <i class="bi bi-person-plus me-1"></i>Create
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Set password modal -->
+<div class="modal fade" id="passwordModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold"><i class="bi bi-key me-2"></i>Set Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <p class="text-muted mb-3">Changing password for: <strong id="pwdUsername"></strong></p>
+        <label class="form-label fw-semibold">New Password</label>
+        <input type="password" id="newPwd" class="form-control" placeholder="Min. 6 characters">
+        <div id="pwdError" class="text-danger small mt-1 d-none"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="setPassword()">
+          <i class="bi bi-check-lg me-1"></i>Update
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _pwdUserId = null;
+const createModal   = new bootstrap.Modal(document.getElementById('createModal'));
+const passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
+
+function showCreateModal() {
+  document.getElementById('newUsername').value = '';
+  document.getElementById('newFullName').value = '';
+  document.getElementById('newPassword').value = '';
+  document.getElementById('createError').classList.add('d-none');
+  createModal.show();
+}
+
+function showPasswordModal(userId, username) {
+  _pwdUserId = userId;
+  document.getElementById('pwdUsername').textContent = username;
+  document.getElementById('newPwd').value = '';
+  document.getElementById('pwdError').classList.add('d-none');
+  passwordModal.show();
+}
+
+async function createUser() {
+  const errEl = document.getElementById('createError');
+  const payload = {
+    username:  document.getElementById('newUsername').value.trim(),
+    full_name: document.getElementById('newFullName').value.trim(),
+    role:      document.getElementById('newRole').value,
+    password:  document.getElementById('newPassword').value,
+  };
+  const res = await fetch('{{ url_for("users.create_user") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (data.success) {
+    createModal.hide();
+    location.reload();
+  } else {
+    errEl.textContent = data.error || 'Failed to create user.';
+    errEl.classList.remove('d-none');
+  }
+}
+
+async function setPassword() {
+  const errEl = document.getElementById('pwdError');
+  const res = await fetch('{{ url_for("users.set_password") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: _pwdUserId, password: document.getElementById('newPwd').value})
+  });
+  const data = await res.json();
+  if (data.success) {
+    passwordModal.hide();
+    alert('Password updated successfully.');
+  } else {
+    errEl.textContent = data.error || 'Failed.';
+    errEl.classList.remove('d-none');
+  }
+}
+
+async function toggleUser(userId, active, btn) {
+  const res = await fetch('{{ url_for("users.toggle_user") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: userId, active})
+  });
+  const data = await res.json();
+  if (data.success) {
+    location.reload();
+  } else {
+    alert('Error: ' + data.error);
+  }
+}
+</script>
+{% endblock %}

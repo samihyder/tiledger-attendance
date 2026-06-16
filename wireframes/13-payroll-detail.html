@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Payroll Detail — TiLedger Wireframe</title>
+  <link href="../static/vendor/bootstrap.min.css" rel="stylesheet">
+  <link href="../static/vendor/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:#f8f9fa}
+    .sidebar .nav-link{border-radius:8px;padding:8px 12px;margin-bottom:2px;transition:background .15s,color .15s}
+    .sidebar .nav-link:hover,.sidebar .nav-link.active{background:rgba(255,255,255,.12);color:#fff!important}
+    .card{border-radius:12px}
+    .card-header{border-radius:12px 12px 0 0!important}
+    .table th{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#6c757d}
+    .table td{vertical-align:middle}
+    .badge{font-weight:500}
+    .form-control:focus,.form-select:focus{border-color:#0d6efd;box-shadow:0 0 0 3px rgba(13,110,253,.15)}
+    ::-webkit-scrollbar{width:6px}
+    ::-webkit-scrollbar-thumb{background:rgba(0,0,0,.2);border-radius:4px}
+    .wf-new{border-left:3px solid #0d6efd!important}
+    .wf-gap{border-left:3px solid #ffc107!important}
+  </style>
+</head>
+<body class="bg-light">
+<div class="d-flex" style="min-height:100vh">
+
+  <nav class="sidebar bg-dark text-white d-flex flex-column p-0" style="width:240px;min-height:100vh;flex-shrink:0">
+    <div class="px-3 py-4 border-bottom border-secondary">
+      <div class="fw-bold fs-5 text-white d-flex align-items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" width="28" height="28">
+  <circle cx="32" cy="32" r="32" fill="#0d6efd"/>
+  <g stroke="#ffffff" stroke-linecap="round" fill="none">
+    <path stroke-width="2.2" d="M19 38 C17 26 24 16 32 16 C40 16 47 26 45 38"/>
+    <path stroke-width="2"   d="M22 39 C21 29 26 21 32 21 C38 21 43 29 42 39"/>
+    <path stroke-width="1.8" d="M25 40 C24.5 32 27.5 26 32 26 C36.5 26 39.5 32 39 40"/>
+    <path stroke-width="1.6" d="M28 41 C28 35 29.5 31 32 31 C34.5 31 36 35 36 41"/>
+    <path stroke-width="1.4" d="M31 41 C31 38 31.5 36 32 36 C32.5 36 33 38 33 41"/>
+  </g>
+  <text x="32" y="56" font-family="'Arial Black',Arial,sans-serif" font-weight="900"
+        font-size="11" fill="#ffffff" text-anchor="middle" letter-spacing="1">TL</text>
+</svg> TiLedger
+      </div>
+      <div class="text-secondary small mt-1">Super Admin</div>
+      <span class="badge bg-primary mt-1">Super Admin</span>
+    </div>
+    <div class="flex-grow-1 py-2">
+      <ul class="nav flex-column px-2"><li class="nav-item"><a class="nav-link text-white-50 " href="02-dashboard.html"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="03-punch-screen.html"><i class="bi bi-fingerprint me-2"></i>Punch Screen</a></li>
+<li class="nav-item mt-2"><div class="text-secondary px-2 small text-uppercase fw-semibold">Attendance</div></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="04-attendance-log.html"><i class="bi bi-clock-history me-2"></i>Attendance Log</a></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="05-manual-entry.html"><i class="bi bi-pencil-square me-2"></i>Manual Entry</a></li>
+<li class="nav-item mt-2"><div class="text-secondary px-2 small text-uppercase fw-semibold">Roster</div></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="06-roster-list.html"><i class="bi bi-calendar3 me-2"></i>Rosters</a></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="08-shifts.html"><i class="bi bi-clock me-2"></i>Shifts</a></li>
+<li class="nav-item mt-2"><div class="text-secondary px-2 small text-uppercase fw-semibold">People</div></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="09-employee-list.html"><i class="bi bi-people me-2"></i>Employees</a></li>
+<li class="nav-item mt-2"><div class="text-secondary px-2 small text-uppercase fw-semibold">Finance</div></li>
+<li class="nav-item"><a class="nav-link text-white-50 active text-white" href="12-payroll-overview.html"><i class="bi bi-cash-stack me-2"></i>Payroll</a></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="17-overtime-queue.html"><i class="bi bi-hourglass-split me-2"></i>Overtime Queue <span class="badge bg-primary ms-1" style="font-size:.55rem">NEW</span></a></li>
+<li class="nav-item mt-2"><div class="text-secondary px-2 small text-uppercase fw-semibold">Admin</div></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="18-user-management.html"><i class="bi bi-person-gear me-2"></i>Users <span class="badge bg-primary ms-1" style="font-size:.55rem">NEW</span></a></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="19-leave-management.html"><i class="bi bi-calendar-check me-2"></i>Leave Requests <span class="badge bg-primary ms-1" style="font-size:.55rem">NEW</span></a></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="15-manual-grants.html"><i class="bi bi-key me-2"></i>Manual Grants</a></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="16-data-cleanup.html"><i class="bi bi-trash3 me-2"></i>Data Cleanup</a></li>
+<li class="nav-item mt-2"><div class="text-secondary px-2 small text-uppercase fw-semibold">System</div></li>
+<li class="nav-item"><a class="nav-link text-white-50 " href="14-sync-status.html"><i class="bi bi-cloud-upload me-2"></i>Sync to ERP</a></li>
+</ul>
+    </div>
+    <div class="px-3 py-3 border-top border-secondary">
+      <button class="btn btn-link nav-link text-white-50 small p-0">
+        <i class="bi bi-box-arrow-left me-1"></i>Logout
+      </button>
+    </div>
+  </nav>
+<div class="flex-grow-1 p-4">
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div class="d-flex align-items-center">
+    <a href="12-payroll-overview.html" class="btn btn-sm btn-outline-secondary me-3"><i class="bi bi-arrow-left"></i></a>
+    <div>
+      <h4 class="fw-bold mb-0">Ali Hassan</h4>
+      <div class="text-muted small">EMP-001 · Sales · <span class="text-success fw-semibold">PKR 45,000/month</span></div>
+    </div>
+  </div>
+  <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-printer me-1"></i>Print</button>
+</div>
+<!-- Summary cards -->
+<div class="row g-3 mb-4">
+  <div class="col-md-2"><div class="card border-0 shadow-sm text-center py-3"><div class="fs-3 fw-bold text-primary">26</div><div class="text-muted small">Working Days</div></div></div>
+  <div class="col-md-2"><div class="card border-0 shadow-sm text-center py-3"><div class="fs-3 fw-bold text-success">24</div><div class="text-muted small">Present</div></div></div>
+  <div class="col-md-2"><div class="card border-0 shadow-sm text-center py-3"><div class="fs-3 fw-bold text-danger">2</div><div class="text-muted small">Absent</div></div></div>
+  <div class="col-md-2"><div class="card border-0 shadow-sm text-center py-3"><div class="fs-3 fw-bold text-secondary">1</div><div class="text-muted small">Holidays</div></div></div>
+  <div class="col-md-2"><div class="card border-0 shadow-sm text-center py-3"><div class="fs-3 fw-bold text-warning">24</div><div class="text-muted small">Late (min)</div></div></div>
+  <div class="col-md-2"><div class="card border-0 shadow-sm text-center py-3 border-danger border-2"><div class="fs-3 fw-bold text-danger">PKR 69</div><div class="text-muted small">Deductions</div></div></div>
+</div>
+<!-- Net Payable banner -->
+<div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #198754!important">
+  <div class="card-body py-3 d-flex justify-content-between align-items-center">
+    <div>
+      <div class="text-muted small fw-semibold text-uppercase">Net Payable — June 2026</div>
+      <div class="text-muted small">PKR 45,000 salary − PKR 69 deductions + PKR 2,000 bonus</div>
+    </div>
+    <div class="fs-2 fw-bold text-success">PKR 46,931</div>
+  </div>
+</div>
+<!-- Day table -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-0 pt-3 pb-2"><h6 class="fw-bold mb-0">Daily Attendance — June 2026</h6></div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>Date</th><th>Day</th><th>Shift</th><th>Status</th><th>Punch In</th><th>Punch Out</th><th>Hours</th><th>OT</th><th>Late (min)</th><th class="text-end">Deduction</th></tr></thead>
+      <tbody>
+        <tr><td class="small">01 Jun</td><td class="small text-muted">Mon</td><td class="small">Morning</td><td><span class="badge bg-success">P</span></td><td class="small">09:02</td><td class="small">18:10</td><td class="small">9.1h</td><td class="small text-muted">—</td><td class="small">—</td><td class="text-end small">—</td></tr>
+        <tr class="table-warning"><td class="small">02 Jun</td><td class="small text-muted">Tue</td><td class="small">Morning</td><td><span class="badge bg-success">P</span></td><td class="small">09:14</td><td class="small">18:05</td><td class="small">8.8h</td><td class="small text-muted">—</td><td class="small text-danger fw-semibold">14 min</td><td class="text-end small text-danger">PKR 40</td></tr>
+        <tr class="table-info"><td class="small">03 Jun</td><td class="small text-muted">Wed</td><td class="small">Morning</td><td><span class="badge bg-info text-dark">H</span></td><td class="small text-muted">—</td><td class="small text-muted">—</td><td class="small text-muted">—</td><td class="small text-muted">—</td><td class="small">—</td><td class="text-end small">—</td></tr>
+        <tr class="table-danger"><td class="small">04 Jun</td><td class="small text-muted">Thu</td><td class="small">Morning</td><td><span class="badge bg-danger">A</span></td><td class="small text-muted">—</td><td class="small text-muted">—</td><td class="small text-muted">—</td><td class="small text-muted">—</td><td class="small">—</td><td class="text-end small text-danger">PKR 29</td></tr>
+        <tr class="table-primary"><td class="small">05 Jun</td><td class="small text-muted">Fri</td><td class="small">Morning</td><td><span class="badge bg-success">P</span></td><td class="small">08:58</td><td class="small text-primary fw-semibold">20:15 <span class="badge bg-primary ms-1" style="font-size:.6rem">+135 min OT ✓</span></td><td class="small">11.2h</td><td class="small text-primary fw-semibold">2.25h</td><td class="small">—</td><td class="text-end small">—</td></tr>
+      </tbody>
+      <tfoot class="table-dark fw-semibold"><tr><td colspan="6">TOTALS</td><td>9.0h avg</td><td class="text-primary">2.25h OT</td><td class="text-danger">24 min</td><td class="text-end text-danger">PKR 69</td></tr></tfoot>
+    </table>
+  </div>
+</div>
+<!-- Adjustments -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-0 pt-3 pb-2 d-flex justify-content-between align-items-center">
+    <h6 class="fw-bold mb-0"><i class="bi bi-sliders me-2 text-primary"></i>Manual Settlements &amp; Adjustments</h6>
+    <button class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add Adjustment</button>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>Type</th><th>Description</th><th>Period</th><th class="text-end">Amount</th><th>Added By</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge bg-success">Bonus</span></td><td>Eid-ul-Adha Bonus</td><td class="small text-muted">01–30 Jun</td><td class="text-end fw-semibold text-success">+PKR 2,000</td><td class="small text-muted">Super Admin</td><td><button class="btn btn-link btn-sm text-danger p-0"><i class="bi bi-trash3"></i></button></td></tr>
+        <tr><td><span class="badge bg-danger">Advance</span></td><td>Salary advance May</td><td class="small text-muted">01–31 May</td><td class="text-end fw-semibold text-danger">-PKR 5,000</td><td class="small text-muted">Super Admin</td><td><button class="btn btn-link btn-sm text-danger p-0"><i class="bi bi-trash3"></i></button></td></tr>
+      </tbody>
+      <tfoot class="table-light fw-semibold"><tr><td colspan="3">Adjustment Totals</td><td class="text-end"><span class="text-success">+PKR 2,000</span> <span class="text-danger ms-2">-PKR 5,000</span></td><td colspan="2"></td></tr></tfoot>
+    </table>
+  </div>
+</div>
+</div>
+  
+<div style="position:fixed;bottom:12px;right:12px;z-index:9999;
+  background:#fff3cd;border:1px solid #ffc107;border-radius:8px;
+  padding:6px 14px;font-size:11px;font-weight:600;color:#664d03;box-shadow:0 2px 8px rgba(0,0,0,.15)">
+  ✏️ WIREFRAME — Not functional
+</div>
+</div>
+<script src="../static/vendor/bootstrap.bundle.min.js"></script>
+</body></html>

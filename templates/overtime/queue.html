@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% block title %}Overtime Queue — TiLedger{% endblock %}
+{% block content %}
+{% if db_error %}
+<div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>{{ db_error }}</div>
+{% endif %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0 fw-bold">Overtime Queue</h4>
+    <div class="text-muted small">Review and approve overtime requests generated on punch-out</div>
+  </div>
+  {% if pending_count > 0 %}
+  <span class="badge bg-warning text-dark fs-6 px-3 py-2">
+    <i class="bi bi-hourglass-split me-1"></i>{{ pending_count }} Pending
+  </span>
+  {% endif %}
+</div>
+
+<!-- Status filter tabs -->
+<ul class="nav nav-tabs mb-4">
+  {% for key, label in [('pending','Pending'), ('approved','Approved'), ('rejected','Rejected'), ('all','All')] %}
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == key %}active fw-semibold{% endif %}"
+       href="{{ url_for('overtime.queue', status=key) }}">{{ label }}</a>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    {% if requests %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Employee</th>
+            <th>Shift End</th>
+            <th>Punched Out</th>
+            <th>OT Minutes</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in requests %}
+          <tr id="ot-row-{{ r.id }}">
+            <td class="fw-semibold">{{ r.ot_date }}</td>
+            <td>
+              <div class="fw-semibold">{{ r.full_name }}</div>
+              <div class="text-muted small">{{ r.employee_code }}</div>
+            </td>
+            <td>{{ r.shift_end_time[:5] if r.shift_end_time else '—' }}</td>
+            <td>{{ r.actual_out_time[11:16] if r.actual_out_time and r.actual_out_time|length > 10 else r.actual_out_time }}</td>
+            <td>
+              <span class="badge bg-primary-subtle text-primary-emphasis fw-semibold px-2">
+                {{ r.ot_minutes }} min
+              </span>
+            </td>
+            <td>
+              {% if r.status == 'pending' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+              {% elif r.status == 'approved' %}
+              <span class="badge bg-success">Approved</span>
+              {% else %}
+              <span class="badge bg-danger">Rejected</span>
+              {% if r.reject_reason %}
+              <div class="text-muted small mt-1" title="{{ r.reject_reason }}">
+                {{ r.reject_reason[:40] }}{% if r.reject_reason|length > 40 %}…{% endif %}
+              </div>
+              {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if r.status == 'pending' %}
+              <button class="btn btn-sm btn-success me-1"
+                      onclick="approveOT({{ r.id }})">
+                <i class="bi bi-check-lg"></i> Approve
+              </button>
+              <button class="btn btn-sm btn-outline-danger"
+                      onclick="showRejectModal({{ r.id }}, '{{ r.full_name|replace("'","\\'")|e }}')">
+                <i class="bi bi-x-lg"></i> Reject
+              </button>
+              {% else %}
+              <span class="text-muted small">{{ r.approved_at[:10] if r.approved_at else '' }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-hourglass fs-1 d-block mb-2 opacity-25"></i>
+      No overtime requests found
+      {% if status_filter != 'all' %} with status "{{ status_filter }}"{% endif %}.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Reject modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-x-circle text-danger me-2"></i>Reject Overtime
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <p class="text-muted mb-3">Rejecting OT for: <strong id="rejectEmpName"></strong></p>
+        <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+        <textarea id="rejectReason" class="form-control" rows="3"
+                  placeholder="Enter reason for rejection…"></textarea>
+        <div id="rejectError" class="text-danger small mt-1 d-none"></div>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" onclick="confirmReject()">
+          <i class="bi bi-x-lg me-1"></i>Reject
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _rejectOtId = null;
+const rejectModal = new bootstrap.Modal(document.getElementById('rejectModal'));
+
+async function approveOT(otId) {
+  const row = document.getElementById('ot-row-' + otId);
+  const res = await fetch('{{ url_for("overtime.approve") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ot_id: otId})
+  });
+  const data = await res.json();
+  if (data.success) {
+    location.reload();
+  } else {
+    alert('Error: ' + data.error);
+  }
+}
+
+function showRejectModal(otId, empName) {
+  _rejectOtId = otId;
+  document.getElementById('rejectEmpName').textContent = empName;
+  document.getElementById('rejectReason').value = '';
+  document.getElementById('rejectError').classList.add('d-none');
+  rejectModal.show();
+}
+
+async function confirmReject() {
+  const reason = document.getElementById('rejectReason').value.trim();
+  const errEl  = document.getElementById('rejectError');
+  if (!reason) {
+    errEl.textContent = 'Please enter a reason.';
+    errEl.classList.remove('d-none');
+    return;
+  }
+  const res = await fetch('{{ url_for("overtime.reject") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ot_id: _rejectOtId, reason})
+  });
+  const data = await res.json();
+  if (data.success) {
+    rejectModal.hide();
+    location.reload();
+  } else {
+    errEl.textContent = data.error || 'Failed to reject.';
+    errEl.classList.remove('d-none');
+  }
+}
+</script>
+{% endblock %}

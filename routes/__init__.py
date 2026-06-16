@@ -5,6 +5,9 @@ from .roster_routes import roster_bp
 from .attendance_routes import attendance_bp
 from .sync_routes import sync_bp
 from .payroll_routes import payroll_bp
+from .overtime_routes import overtime_bp
+from .users_routes import users_bp
+from .leave_routes import leave_bp
 
 def register_blueprints(app):
     app.register_blueprint(auth_bp)
@@ -14,3 +17,6 @@ def register_blueprints(app):
     app.register_blueprint(attendance_bp, url_prefix='/attendance')
     app.register_blueprint(sync_bp,      url_prefix='/sync')
     app.register_blueprint(payroll_bp,   url_prefix='/payroll')
+    app.register_blueprint(overtime_bp,  url_prefix='/overtime')
+    app.register_blueprint(users_bp,     url_prefix='/users')
+    app.register_blueprint(leave_bp,     url_prefix='/leave')

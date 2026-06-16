@@ -17,9 +17,9 @@ def dashboard():
     if now.hour < 4:
         from datetime import timedelta
         prev = (date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
-        recent_punches = db.get_attendance_logs(date_from=prev, date_to=today)
+        recent_punches, _ = db.get_attendance_logs(date_from=prev, date_to=today)
     else:
-        recent_punches = db.get_attendance_logs(date_from=today, date_to=today)
+        recent_punches, _ = db.get_attendance_logs(date_from=today, date_to=today)
     sync_history   = db.get_sync_history(limit=5)
     today_display  = now.strftime('%A, %d %b %Y')
     return render_template(

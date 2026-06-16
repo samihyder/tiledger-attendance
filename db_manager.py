@@ -36,15 +36,30 @@ def _pv(v) -> str:
 
 
 def _get(table: str, select: str = '*', filters=(), order: str = None,
-         limit: int = None) -> list:
+         limit: int = None, offset: int = None) -> list:
     """GET rows. filters is a list of (column, 'op.value') tuples."""
     params = [('select', select)] + list(filters)
     if order:  params.append(('order', order))
     if limit:  params.append(('limit', str(limit)))
+    if offset: params.append(('offset', str(offset)))
     url = f'{Config.SUPABASE_URL}/rest/v1/{table}?{urllib.parse.urlencode(params)}'
     req = urllib.request.Request(url, headers=_hdr())
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read()) or []
+
+
+def _count(table: str, filters=()) -> int:
+    """Return exact row count for a query using Supabase Prefer: count=exact header."""
+    params = [('select', 'id')] + list(filters)
+    url = f'{Config.SUPABASE_URL}/rest/v1/{table}?{urllib.parse.urlencode(params)}'
+    hdr = {**_hdr(), 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0'}
+    req = urllib.request.Request(url, headers=hdr)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        cr = r.headers.get('Content-Range', '0/0')
+        try:
+            return int(cr.split('/')[-1])
+        except (ValueError, IndexError):
+            return 0
 
 
 def _one(table: str, select: str = '*', filters=()) -> dict | None:
@@ -273,6 +288,17 @@ def get_roster(roster_id: int):
     return _flat(rows[0], 'shifts', 'employees') if rows else None
 
 
+def get_rosters_by_ids(roster_ids: set) -> dict:
+    """Fetch multiple rosters in one query. Returns dict keyed by roster id."""
+    if not roster_ids:
+        return {}
+    id_list = ','.join(str(i) for i in roster_ids)
+    rows = _get('rosters',
+                'id,is_holiday,shift_id,shifts(shift_start,shift_end,grace_minutes)',
+                [('id', f'in.({id_list})')])
+    return {r['id']: _flat(r, 'shifts') for r in rows}
+
+
 def get_app_user_by_id(user_id: int):
     return _one('app_users', 'id,username,full_name,role,active', [('id', f'eq.{user_id}')])
 
@@ -437,16 +463,22 @@ def record_punch(employee_id: int, punch_time: str, punch_type: str,
     })
     return row['id']
 
+LOG_PAGE_SIZE = 50
+
 def get_attendance_logs(date_from: str = None, date_to: str = None,
-                        employee_id: int = None, synced: int = None):
+                        employee_id: int = None, synced: int = None,
+                        page: int = 1):
+    """Return (logs, total_count) for the given filters and page."""
     f = []
     if date_from:   f.append(('punch_time', f'gte.{date_from}T00:00:00'))
     if date_to:     f.append(('punch_time', f'lte.{date_to}T23:59:59'))
     if employee_id: f.append(('employee_id', f'eq.{employee_id}'))
     if synced is not None: f.append(('synced', f'eq.{_pv(bool(synced))}'))
+    total = _count('attendance_logs', f)
+    offset = (page - 1) * LOG_PAGE_SIZE
     rows = _get('attendance_logs', '*,employees(full_name,employee_code)',
-                f, order='punch_time.desc')
-    return [_norm_log(r) for r in rows]
+                f, order='punch_time.desc', limit=LOG_PAGE_SIZE, offset=offset)
+    return [_norm_log(r) for r in rows], total
 
 def get_unsynced_logs():
     rows = _get('attendance_logs',
@@ -766,19 +798,35 @@ def get_payroll_detail(employee_id: int, date_from: str, date_to: str) -> dict:
             'punch_source':    first_in['punch_source'] if first_in else None,
         })
 
+    monthly_salary  = float(employee.get('monthly_salary') or 0)
+    total_deduction = round(sum(r['daily_deduction'] for r in daily_records), 2)
+    adjustments     = get_payroll_adjustments(employee_id, date_from, date_to)
+
+    # Positive adj types add to pay; negative adj types subtract
+    ADDITIVE = ('bonus',)
+    SUBTRACTIVE = ('advance_payment', 'loan_recovery', 'deduction', 'correction', 'other')
+    total_bonus     = round(sum(a['amount'] for a in adjustments if a['adj_type'] in ADDITIVE), 2)
+    total_adj_deduct= round(sum(a['amount'] for a in adjustments if a['adj_type'] in SUBTRACTIVE), 2)
+    net_payable     = round(monthly_salary - total_deduction + total_bonus - total_adj_deduct, 2)
+
     return {
-        'employee':        employee,
-        'date_from':       date_from,
-        'date_to':         date_to,
-        'daily_records':   daily_records,
-        'working_days':    sum(1 for r in daily_records if not r['is_holiday']),
-        'present':         sum(1 for r in daily_records if r['status'] == 'Present'),
-        'absent':          sum(1 for r in daily_records if r['status'] == 'Absent'),
-        'holidays':        sum(1 for r in daily_records if r['status'] == 'Holiday'),
-        'late_days':       sum(1 for r in daily_records if r['minutes_late'] > 0),
-        'total_late_mins': sum(r['minutes_late'] for r in daily_records),
-        'total_deduction': round(sum(r['daily_deduction'] for r in daily_records), 2),
-        'deduction_rate':  rate,
+        'employee':         employee,
+        'date_from':        date_from,
+        'date_to':          date_to,
+        'daily_records':    daily_records,
+        'working_days':     sum(1 for r in daily_records if not r['is_holiday']),
+        'present':          sum(1 for r in daily_records if r['status'] == 'Present'),
+        'absent':           sum(1 for r in daily_records if r['status'] == 'Absent'),
+        'holidays':         sum(1 for r in daily_records if r['status'] == 'Holiday'),
+        'late_days':        sum(1 for r in daily_records if r['minutes_late'] > 0),
+        'total_late_mins':  sum(r['minutes_late'] for r in daily_records),
+        'total_deduction':  total_deduction,
+        'deduction_rate':   rate,
+        'monthly_salary':   monthly_salary,
+        'adjustments':      adjustments,
+        'total_bonus':      total_bonus,
+        'total_adj_deduct': total_adj_deduct,
+        'net_payable':      net_payable,
     }
 
 
@@ -863,3 +911,184 @@ def get_payroll_overview(date_from: str, date_to: str) -> list:
         })
 
     return sorted(overview, key=lambda x: x['full_name'])
+
+
+# ── Payroll Adjustments ────────────────────────────────────────────────────────
+
+ADJ_TYPES = ('bonus', 'advance_payment', 'loan_recovery', 'deduction', 'correction', 'other')
+ADJ_LABELS = {
+    'bonus':          'Bonus',
+    'advance_payment':'Advance Payment',
+    'loan_recovery':  'Loan Recovery',
+    'deduction':      'Manual Deduction',
+    'correction':     'Correction',
+    'other':          'Other',
+}
+
+def get_payroll_adjustments(employee_id: int, date_from: str, date_to: str) -> list:
+    rows = _get('payroll_adjustments',
+                '*,app_users!payroll_adjustments_created_by_fkey(full_name)',
+                [('employee_id', f'eq.{employee_id}'),
+                 ('period_from', f'gte.{date_from}'),
+                 ('period_to',   f'lte.{date_to}')],
+                order='created_at.desc')
+    result = []
+    for r in rows:
+        r = dict(r)
+        creator = r.pop('app_users', None) or {}
+        r['created_by_name'] = creator.get('full_name', '')
+        r['label'] = ADJ_LABELS.get(r.get('adj_type', ''), r.get('adj_type', ''))
+        result.append(r)
+    return result
+
+
+def add_payroll_adjustment(employee_id: int, period_from: str, period_to: str,
+                           adj_type: str, amount: float, description: str,
+                           created_by: int) -> dict:
+    if adj_type not in ADJ_TYPES:
+        raise ValueError(f'Invalid adjustment type: {adj_type}')
+    return _insert('payroll_adjustments', {
+        'employee_id':  employee_id,
+        'period_from':  period_from,
+        'period_to':    period_to,
+        'adj_type':     adj_type,
+        'amount':       round(float(amount), 2),
+        'description':  description.strip(),
+        'created_by':   created_by,
+    })
+
+
+def delete_payroll_adjustment(adj_id: int, employee_id: int) -> None:
+    _delete('payroll_adjustments',
+            [('id', f'eq.{adj_id}'), ('employee_id', f'eq.{employee_id}')])
+
+
+# ── Overtime requests ─────────────────────────────────────────────────────────
+
+def update_punch_overtime(log_id: int, ot_minutes: int):
+    _patch('attendance_logs', {'overtime_minutes': ot_minutes}, [('id', f'eq.{log_id}')])
+
+
+def create_overtime_request(employee_id: int, attendance_log_id: int, ot_date: str,
+                             shift_end_time: str, actual_out_time: str,
+                             ot_minutes: int) -> dict:
+    existing = _one('overtime_requests', 'id',
+                    [('employee_id', f'eq.{employee_id}'),
+                     ('ot_date', f'eq.{ot_date}')])
+    if existing:
+        _patch('overtime_requests',
+               {'ot_minutes': ot_minutes, 'actual_out_time': actual_out_time,
+                'status': 'pending'},
+               [('id', f'eq.{existing["id"]}')])
+        return existing
+    return _insert('overtime_requests', {
+        'employee_id':       employee_id,
+        'attendance_log_id': attendance_log_id,
+        'ot_date':           ot_date,
+        'shift_end_time':    shift_end_time,
+        'actual_out_time':   actual_out_time,
+        'ot_minutes':        ot_minutes,
+    })
+
+
+def get_overtime_requests(status: str = None, employee_id: int = None) -> list:
+    f = []
+    if status:      f.append(('status', f'eq.{status}'))
+    if employee_id: f.append(('employee_id', f'eq.{employee_id}'))
+    rows = _get('overtime_requests',
+                '*,employees(full_name,employee_code)',
+                f, order='ot_date.desc')
+    result = []
+    for r in rows:
+        r = _flat(r, 'employees')
+        r['created_at'] = _nt(r.get('created_at'))
+        r['approved_at'] = _nt(r.get('approved_at'))
+        result.append(r)
+    return result
+
+
+def get_pending_ot_count() -> int:
+    return _count('overtime_requests', [('status', 'eq.pending')])
+
+
+def approve_overtime(ot_id: int, approved_by: int):
+    _patch('overtime_requests', {
+        'status':      'approved',
+        'approved_by': approved_by,
+        'approved_at': datetime.utcnow().isoformat(),
+        'reject_reason': None,
+    }, [('id', f'eq.{ot_id}')])
+
+
+def reject_overtime(ot_id: int, approved_by: int, reason: str):
+    _patch('overtime_requests', {
+        'status':        'rejected',
+        'approved_by':   approved_by,
+        'approved_at':   datetime.utcnow().isoformat(),
+        'reject_reason': reason.strip() if reason else None,
+    }, [('id', f'eq.{ot_id}')])
+
+
+# ── Leave requests ────────────────────────────────────────────────────────────
+
+LEAVE_TYPES = ('annual', 'sick', 'unpaid', 'emergency', 'other')
+LEAVE_LABELS = {
+    'annual':    'Annual Leave',
+    'sick':      'Sick Leave',
+    'unpaid':    'Unpaid Leave',
+    'emergency': 'Emergency Leave',
+    'other':     'Other',
+}
+
+
+def get_leave_requests(status: str = None, employee_id: int = None) -> list:
+    f = []
+    if status:      f.append(('status', f'eq.{status}'))
+    if employee_id: f.append(('employee_id', f'eq.{employee_id}'))
+    rows = _get('leave_requests',
+                '*,employees(full_name,employee_code)',
+                f, order='date_from.desc')
+    result = []
+    for r in rows:
+        r = _flat(r, 'employees')
+        r['created_at'] = _nt(r.get('created_at'))
+        r['approved_at'] = _nt(r.get('approved_at'))
+        r['label'] = LEAVE_LABELS.get(r.get('leave_type', ''), r.get('leave_type', ''))
+        result.append(r)
+    return result
+
+
+def get_pending_leave_count() -> int:
+    return _count('leave_requests', [('status', 'eq.pending')])
+
+
+def create_leave_request(employee_id: int, leave_type: str, date_from: str,
+                          date_to: str, days: int, reason: str) -> dict:
+    if leave_type not in LEAVE_TYPES:
+        raise ValueError(f'Invalid leave type: {leave_type}')
+    return _insert('leave_requests', {
+        'employee_id': employee_id,
+        'leave_type':  leave_type,
+        'date_from':   date_from,
+        'date_to':     date_to,
+        'days':        days,
+        'reason':      reason.strip() if reason else None,
+    })
+
+
+def approve_leave(leave_id: int, approved_by: int):
+    _patch('leave_requests', {
+        'status':      'approved',
+        'approved_by': approved_by,
+        'approved_at': datetime.utcnow().isoformat(),
+        'reject_reason': None,
+    }, [('id', f'eq.{leave_id}')])
+
+
+def reject_leave(leave_id: int, approved_by: int, reason: str):
+    _patch('leave_requests', {
+        'status':        'rejected',
+        'approved_by':   approved_by,
+        'approved_at':   datetime.utcnow().isoformat(),
+        'reject_reason': reason.strip() if reason else None,
+    }, [('id', f'eq.{leave_id}')])

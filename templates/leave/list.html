@@ -1,0 +1,276 @@
+{% extends 'base.html' %}
+{% block title %}Leave Requests — TiLedger{% endblock %}
+{% block content %}
+{% if db_error %}
+<div class="alert alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>{{ db_error }}</div>
+{% endif %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0 fw-bold">Leave Requests</h4>
+    <div class="text-muted small">Manage employee leave applications</div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if pending_count > 0 %}
+    <span class="badge bg-warning text-dark fs-6 px-3 py-2">
+      <i class="bi bi-calendar-x me-1"></i>{{ pending_count }} Pending
+    </span>
+    {% endif %}
+    {% if session.role in ['super_admin', 'manager'] %}
+    <button class="btn btn-primary" onclick="showAddModal()">
+      <i class="bi bi-plus-lg me-1"></i>Add Request
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Status filter tabs -->
+<ul class="nav nav-tabs mb-4">
+  {% for key, label in [('pending','Pending'), ('approved','Approved'), ('rejected','Rejected'), ('all','All')] %}
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == key %}active fw-semibold{% endif %}"
+       href="{{ url_for('leave.list_leave', status=key) }}">{{ label }}</a>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="card shadow-sm">
+  <div class="card-body p-0">
+    {% if requests %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Employee</th>
+            <th>Type</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Days</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in requests %}
+          <tr id="leave-row-{{ r.id }}">
+            <td>
+              <div class="fw-semibold">{{ r.full_name }}</div>
+              <div class="text-muted small">{{ r.employee_code }}</div>
+            </td>
+            <td>
+              {% set type_colors = {'annual':'primary','sick':'warning','unpaid':'secondary','emergency':'danger','other':'info'} %}
+              <span class="badge bg-{{ type_colors.get(r.leave_type, 'secondary') }}-subtle text-{{ type_colors.get(r.leave_type, 'secondary') }}-emphasis">
+                {{ r.label }}
+              </span>
+            </td>
+            <td>{{ r.date_from }}</td>
+            <td>{{ r.date_to }}</td>
+            <td class="fw-semibold">{{ r.days }}</td>
+            <td class="text-muted small" style="max-width:200px">
+              {{ r.reason or '—' }}
+            </td>
+            <td>
+              {% if r.status == 'pending' %}
+              <span class="badge bg-warning text-dark">Pending</span>
+              {% elif r.status == 'approved' %}
+              <span class="badge bg-success">Approved</span>
+              {% else %}
+              <span class="badge bg-danger">Rejected</span>
+              {% if r.reject_reason %}
+              <div class="text-muted small" title="{{ r.reject_reason }}">
+                {{ r.reject_reason[:35] }}{% if r.reject_reason|length > 35 %}…{% endif %}
+              </div>
+              {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if r.status == 'pending' and session.role in ['super_admin', 'manager'] %}
+              <button class="btn btn-sm btn-success me-1"
+                      onclick="approveLeave({{ r.id }})">
+                <i class="bi bi-check-lg"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger"
+                      onclick="showRejectModal({{ r.id }}, '{{ r.full_name|replace("'","\\'")|e }}')">
+                <i class="bi bi-x-lg"></i>
+              </button>
+              {% else %}
+              <span class="text-muted small">{{ r.approved_at[:10] if r.approved_at else '' }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-calendar-check fs-1 d-block mb-2 opacity-25"></i>
+      No leave requests found
+      {% if status_filter != 'all' %} with status "{{ status_filter }}"{% endif %}.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Add leave modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold"><i class="bi bi-calendar-plus me-2"></i>Add Leave Request</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Employee</label>
+          <select id="leaveEmployee" class="form-select">
+            <option value="">Select employee…</option>
+            {% for emp in employees %}
+            <option value="{{ emp.id }}">{{ emp.full_name }} ({{ emp.employee_code }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Leave Type</label>
+          <select id="leaveType" class="form-select">
+            {% for key, label in leave_types.items() %}
+            <option value="{{ key }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col">
+            <label class="form-label fw-semibold">From</label>
+            <input type="date" id="leaveFrom" class="form-control">
+          </div>
+          <div class="col">
+            <label class="form-label fw-semibold">To</label>
+            <input type="date" id="leaveTo" class="form-control">
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Reason</label>
+          <textarea id="leaveReason" class="form-control" rows="2" placeholder="Optional reason…"></textarea>
+        </div>
+        <div id="addError" class="text-danger small d-none"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveLeave()">
+          <i class="bi bi-check-lg me-1"></i>Submit
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reject modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold"><i class="bi bi-x-circle text-danger me-2"></i>Reject Leave</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <p class="text-muted mb-3">Rejecting leave for: <strong id="rejectEmpName"></strong></p>
+        <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+        <textarea id="rejectReason" class="form-control" rows="3" placeholder="Enter reason…"></textarea>
+        <div id="rejectError" class="text-danger small mt-1 d-none"></div>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" onclick="confirmReject()">
+          <i class="bi bi-x-lg me-1"></i>Reject
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _rejectLeaveId = null;
+const addModal    = new bootstrap.Modal(document.getElementById('addModal'));
+const rejectModal = new bootstrap.Modal(document.getElementById('rejectModal'));
+
+function showAddModal() {
+  document.getElementById('leaveEmployee').value = '';
+  document.getElementById('leaveFrom').value = '';
+  document.getElementById('leaveTo').value = '';
+  document.getElementById('leaveReason').value = '';
+  document.getElementById('addError').classList.add('d-none');
+  addModal.show();
+}
+
+async function saveLeave() {
+  const errEl = document.getElementById('addError');
+  const payload = {
+    employee_id: parseInt(document.getElementById('leaveEmployee').value || '0'),
+    leave_type:  document.getElementById('leaveType').value,
+    date_from:   document.getElementById('leaveFrom').value,
+    date_to:     document.getElementById('leaveTo').value,
+    reason:      document.getElementById('leaveReason').value.trim(),
+  };
+  const res = await fetch('{{ url_for("leave.create_leave") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (data.success) {
+    addModal.hide();
+    location.reload();
+  } else {
+    errEl.textContent = data.error || 'Failed to submit.';
+    errEl.classList.remove('d-none');
+  }
+}
+
+async function approveLeave(leaveId) {
+  const res = await fetch('{{ url_for("leave.approve") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({leave_id: leaveId})
+  });
+  const data = await res.json();
+  if (data.success) {
+    location.reload();
+  } else {
+    alert('Error: ' + data.error);
+  }
+}
+
+function showRejectModal(leaveId, empName) {
+  _rejectLeaveId = leaveId;
+  document.getElementById('rejectEmpName').textContent = empName;
+  document.getElementById('rejectReason').value = '';
+  document.getElementById('rejectError').classList.add('d-none');
+  rejectModal.show();
+}
+
+async function confirmReject() {
+  const reason = document.getElementById('rejectReason').value.trim();
+  const errEl  = document.getElementById('rejectError');
+  if (!reason) {
+    errEl.textContent = 'Please enter a reason.';
+    errEl.classList.remove('d-none');
+    return;
+  }
+  const res = await fetch('{{ url_for("leave.reject") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({leave_id: _rejectLeaveId, reason})
+  });
+  const data = await res.json();
+  if (data.success) {
+    rejectModal.hide();
+    location.reload();
+  } else {
+    errEl.textContent = data.error || 'Failed.';
+    errEl.classList.remove('d-none');
+  }
+}
+</script>
+{% endblock %}

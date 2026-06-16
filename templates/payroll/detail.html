@@ -93,6 +93,19 @@
   </div>
 </div>
 
+<!-- Net Payable banner -->
+<div class="card border-0 shadow-sm mb-4 {% if data.net_payable >= 0 %}border-success{% else %}border-danger{% endif %}" style="border-left: 4px solid {% if data.net_payable >= 0 %}#198754{% else %}#dc3545{% endif %} !important;">
+  <div class="card-body py-3 d-flex justify-content-between align-items-center">
+    <div>
+      <div class="text-muted small fw-semibold text-uppercase">Net Payable ({{ date_from }} – {{ date_to }})</div>
+      <div class="text-muted small">Monthly Salary PKR {{ "{:,.0f}".format(data.monthly_salary) }} − Deductions PKR {{ "{:,.0f}".format(data.total_deduction) }}</div>
+    </div>
+    <div class="fs-2 fw-bold {% if data.net_payable >= 0 %}text-success{% else %}text-danger{% endif %}">
+      PKR {{ "{:,.0f}".format(data.net_payable) }}
+    </div>
+  </div>
+</div>
+
 <!-- Deduction rate info -->
 {% if data.deduction_rate > 0 %}
 <div class="alert alert-info d-flex align-items-center py-2 mb-4">
@@ -244,6 +257,129 @@
   </div>
 </div>
 
+<!-- Manual Adjustments -->
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-white border-0 pt-3 pb-2 d-flex justify-content-between align-items-center">
+    <h6 class="fw-bold mb-0"><i class="bi bi-sliders me-2 text-primary"></i>Manual Settlements &amp; Adjustments</h6>
+    {% if session.role == 'super_admin' %}
+    <button class="btn btn-primary btn-sm" onclick="showAddAdjModal()">
+      <i class="bi bi-plus-lg me-1"></i>Add Adjustment
+    </button>
+    {% endif %}
+  </div>
+  <div class="card-body p-0" id="adj-table-wrap">
+    {% if data.adjustments %}
+    <table class="table table-sm mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Type</th><th>Description</th><th>Period</th>
+          <th class="text-end">Amount</th><th>Added By</th><th class="text-end">Date</th>
+          {% if session.role == 'super_admin' %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in data.adjustments %}
+        <tr>
+          <td>
+            {% if a.adj_type == 'bonus' %}
+              <span class="badge bg-success">{{ a.label }}</span>
+            {% elif a.adj_type in ('advance_payment','loan_recovery','deduction') %}
+              <span class="badge bg-danger">{{ a.label }}</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ a.label }}</span>
+            {% endif %}
+          </td>
+          <td>{{ a.description }}</td>
+          <td class="text-muted small">{{ a.period_from }} – {{ a.period_to }}</td>
+          <td class="text-end fw-semibold {% if a.adj_type == 'bonus' %}text-success{% else %}text-danger{% endif %}">
+            {% if a.adj_type == 'bonus' %}+{% else %}-{% endif %}PKR {{ "{:,.0f}".format(a.amount) }}
+          </td>
+          <td class="text-muted small">{{ a.created_by_name }}</td>
+          <td class="text-muted small text-end">{{ a.created_at[:10] if a.created_at else '' }}</td>
+          {% if session.role == 'super_admin' %}
+          <td class="text-end">
+            <button class="btn btn-link btn-sm text-danger p-0" onclick="deleteAdj({{ a.id }})">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="table-light fw-semibold">
+        <tr>
+          <td colspan="3">Adjustment Totals</td>
+          <td class="text-end">
+            {% if data.total_bonus > 0 %}
+              <span class="text-success">+PKR {{ "{:,.0f}".format(data.total_bonus) }}</span>
+            {% endif %}
+            {% if data.total_adj_deduct > 0 %}
+              <span class="text-danger ms-2">-PKR {{ "{:,.0f}".format(data.total_adj_deduct) }}</span>
+            {% endif %}
+          </td>
+          <td colspan="{% if session.role == 'super_admin' %}3{% else %}2{% endif %}"></td>
+        </tr>
+      </tfoot>
+    </table>
+    {% else %}
+    <div class="text-center text-muted py-4 small">
+      <i class="bi bi-sliders d-block fs-4 mb-2 opacity-25"></i>
+      No adjustments for this period.
+      {% if session.role == 'super_admin' %}Click "Add Adjustment" to add a bonus, deduction, or correction.{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Add Adjustment Modal -->
+{% if session.role == 'super_admin' %}
+<div class="modal fade" id="adjModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h6 class="modal-title fw-bold"><i class="bi bi-sliders me-2 text-primary"></i>Add Payroll Adjustment</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="adj-error" class="alert alert-danger d-none py-2 small"></div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Type</label>
+          <select class="form-select" id="adj-type">
+            {% for key, label in adj_types.items() %}
+            <option value="{{ key }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Amount (PKR)</label>
+          <input type="number" class="form-control" id="adj-amount" min="0.01" step="0.01" placeholder="0.00">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Description</label>
+          <input type="text" class="form-control" id="adj-description" placeholder="e.g. Eid bonus, August advance...">
+        </div>
+        <div class="row g-2">
+          <div class="col">
+            <label class="form-label fw-semibold">Period From</label>
+            <input type="date" class="form-control" id="adj-from" value="{{ date_from }}">
+          </div>
+          <div class="col">
+            <label class="form-label fw-semibold">Period To</label>
+            <input type="date" class="form-control" id="adj-to" value="{{ date_to }}">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm fw-semibold" onclick="saveAdj()">
+          <i class="bi bi-check2 me-1"></i>Save Adjustment
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}
 {% block scripts %}
 <style>
@@ -253,4 +389,49 @@
   body { font-size: 12px; }
 }
 </style>
+{% if session.role == 'super_admin' %}
+<script>
+const ADJ_API = {
+  add:    '{{ url_for("payroll.api_add_adjustment") }}',
+  delete: '{{ url_for("payroll.api_delete_adjustment") }}',
+};
+const EMPLOYEE_ID  = {{ data.employee.id }};
+const ADJ_MODAL    = new bootstrap.Modal(document.getElementById('adjModal'));
+
+function showAddAdjModal() { ADJ_MODAL.show(); }
+
+async function saveAdj() {
+  const errEl = document.getElementById('adj-error');
+  errEl.classList.add('d-none');
+  const body = {
+    employee_id: EMPLOYEE_ID,
+    period_from: document.getElementById('adj-from').value,
+    period_to:   document.getElementById('adj-to').value,
+    adj_type:    document.getElementById('adj-type').value,
+    amount:      parseFloat(document.getElementById('adj-amount').value),
+    description: document.getElementById('adj-description').value,
+  };
+  try {
+    const r = await fetch(ADJ_API.add, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (d.success) { ADJ_MODAL.hide(); location.reload(); }
+    else { errEl.textContent = d.error; errEl.classList.remove('d-none'); }
+  } catch(e) { errEl.textContent = e.message; errEl.classList.remove('d-none'); }
+}
+
+async function deleteAdj(adjId) {
+  if (!confirm('Delete this adjustment? This cannot be undone.')) return;
+  const r = await fetch(ADJ_API.delete, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ adj_id: adjId, employee_id: EMPLOYEE_ID }),
+  });
+  const d = await r.json();
+  if (d.success) location.reload();
+  else alert('Error: ' + d.error);
+}
+</script>
+{% endif %}
 {% endblock %}

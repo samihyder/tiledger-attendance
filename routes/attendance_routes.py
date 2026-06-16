@@ -28,9 +28,10 @@ def punch_screen():
     # Before 04:00 AM we're still in the previous night's shift — show its punches
     if now.hour < 4:
         prev  = (date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
-        recent = db.get_attendance_logs(date_from=prev, date_to=today)[:10]
+        recent, _ = db.get_attendance_logs(date_from=prev, date_to=today)
     else:
-        recent = db.get_attendance_logs(date_from=today, date_to=today)[:10]
+        recent, _ = db.get_attendance_logs(date_from=today, date_to=today)
+    recent = recent[:10]
     employees  = db.get_employees(active_only=True) if _is_manual_mode_today() else []
     face_count = len(db.get_all_face_templates())
     return render_template(
@@ -177,12 +178,18 @@ def api_biometric_punch():
 @login_required
 @permission_required('view_attendance')
 def log():
+    import math
     today = date.today()
     date_from = request.args.get('date_from', today.strftime('%Y-%m-%d'))
     date_to   = request.args.get('date_to',   today.strftime('%Y-%m-%d'))
     employee_id = request.args.get('employee_id', type=int)
+    page = max(1, request.args.get('page', 1, type=int))
 
-    logs      = db.get_attendance_logs(date_from=date_from, date_to=date_to, employee_id=employee_id)
+    logs, total = db.get_attendance_logs(
+        date_from=date_from, date_to=date_to,
+        employee_id=employee_id, page=page
+    )
+    total_pages = max(1, math.ceil(total / db.LOG_PAGE_SIZE))
     employees = db.get_employees()
     summary   = logic.get_daily_summary(date_from) if date_from == date_to else []
     is_super_admin = session.get('role') == 'super_admin'
@@ -196,6 +203,9 @@ def log():
         selected_employee=employee_id,
         summary=summary,
         is_super_admin=is_super_admin,
+        page=page,
+        total_pages=total_pages,
+        total_records=total,
         user=current_user(),
     )
 
@@ -431,11 +441,15 @@ def api_cleanup_recalc_late():
         return jsonify({'success': False, 'error': 'date_from and date_to required'}), 400
     try:
         rows = db.get_all_punches_for_dedup(date_from, date_to)
+        # Collect all roster IDs first, then fetch in one query (avoids N+1)
+        roster_ids = {r['roster_id'] for r in rows
+                      if r['punch_type'] == 'in' and r.get('roster_id')}
+        rosters_map = db.get_rosters_by_ids(roster_ids)
         updated = 0
         for r in rows:
             if r['punch_type'] != 'in' or not r.get('roster_id'):
                 continue
-            roster = db.get_roster(r['roster_id'])
+            roster = rosters_map.get(r['roster_id'])
             if not roster or roster.get('is_holiday'):
                 continue
             punch_dt = datetime.strptime(r['punch_time'], '%Y-%m-%d %H:%M:%S')
