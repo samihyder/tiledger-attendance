@@ -5,6 +5,7 @@ Core attendance business logic — late calculation, punch processing, roster en
 from datetime import datetime, timedelta, date
 import db_manager as db
 from config import Config
+from attendance_erp_sync import sync_shift_close
 
 
 def calculate_minutes_late(punch_time: datetime, shift_start_str: str, grace_minutes: int) -> int:
@@ -159,6 +160,9 @@ def process_biometric_punch(employee_id: int) -> dict:
                 ot_minutes=ot_minutes,
             )
 
+    if punch_type == 'out':
+        sync_shift_close(employee_id, today)
+
     return {
         'success': True,
         'log_id': log_id,
@@ -241,6 +245,9 @@ def process_manual_day_punch(employee_id: int, override_by: int) -> dict:
                 ot_minutes=ot_minutes,
             )
 
+    if punch_type == 'out':
+        sync_shift_close(employee_id, today)
+
     return {
         'success': True,
         'log_id': log_id,
@@ -303,6 +310,9 @@ def process_manual_punch(employee_id: int, punch_type: str, punch_time_str: str,
                 actual_out_time=punch_time_normalized,
                 ot_minutes=ot_minutes,
             )
+
+    if punch_type == 'out':
+        sync_shift_close(employee_id, today)
 
     return {
         'success': True,

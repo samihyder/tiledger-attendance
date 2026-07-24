@@ -13,3 +13,4 @@ build/
 *.spec
 assets/icon.iconset/
 assets/icon.icns
+.vercel

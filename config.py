@@ -80,6 +80,16 @@ class Config:
     ERP_SUPABASE_URL         = os.environ.get('ERP_SUPABASE_URL', '')
     ERP_SUPABASE_SERVICE_KEY = os.environ.get('ERP_SUPABASE_SERVICE_KEY', '')
 
+    # ERP attendance webhook — event-triggered sync on shift close (punch-out),
+    # replacing the manual/scheduled ERP_SUPABASE_* mirror above for
+    # attendance_daily specifically. ERP_ENTITY_ID is the kitchenosv2 entity
+    # this deployment's attendance data belongs to (single-entity mapping,
+    # same convention as kitchenosv2's own NEXT_PUBLIC_ENTITY_ID — a real
+    # per-employee branch mapping is separate, larger scope).
+    ERP_WEBHOOK_URL           = os.environ.get('ERP_WEBHOOK_URL', '')
+    ATTENDANCE_WEBHOOK_SECRET = os.environ.get('ATTENDANCE_WEBHOOK_SECRET', '')
+    ERP_ENTITY_ID             = os.environ.get('ERP_ENTITY_ID', '')
+
     SYNC_BATCH_SIZE = 200          # max records per sync request
 
     # Face recognition
