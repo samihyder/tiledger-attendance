@@ -26,6 +26,8 @@ def create_app() -> Flask:
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
     app.config['SESSION_COOKIE_SECURE'] = bool(os.environ.get('VERCEL'))  # https on Vercel; plain http when run locally
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    # Served on the ERP's own domain (tiledger.mutexsystems.co.uk/attendance) — own cookie name.
+    app.config['SESSION_COOKIE_NAME'] = 'tl_attendance'
     app.url_map.strict_slashes = False
 
     Compress(app)
