@@ -1,0 +1,11 @@
+{% extends 'erp/base.html' %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="card mx-auto mt-5" style="max-width: 440px"><div class="card-body text-center p-4">
+  <i class="bi bi-person-badge fs-1 text-primary"></i>
+  <h5 class="mt-2">TiLedger Attendance</h5>
+  <p class="text-muted small">Check in / check out and face enrolment. Sign in with your TiLedger login — staff, roster and payroll are managed in TiLedger.</p>
+  <a class="btn btn-primary w-100" href="{{ erp_url }}">Sign in with TiLedger</a>
+  <p class="text-muted small mt-3 mb-0">For a punch tablet, choose <b>Set up punch tablet</b> in TiLedger — it stays signed in for 30 days.</p>
+</div></div>
+{% endblock %}

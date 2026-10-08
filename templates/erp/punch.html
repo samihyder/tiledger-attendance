@@ -1,0 +1,113 @@
+{% extends 'erp/base.html' %}
+{% block title %}Check in / out{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-md-7">
+    <div class="cam mb-2"><video id="video" autoplay muted playsinline></video></div>
+    <button id="btn" class="btn btn-primary btn-lg w-100" disabled><i class="bi bi-person-bounding-box me-2"></i>Loading…</button>
+    <div id="result" class="result mt-2"></div>
+    <div id="queue" class="small text-warning"></div>
+  </div>
+  <div class="col-md-5">
+    <div class="card"><div class="card-body p-2">
+      <div class="d-flex justify-content-between align-items-center px-1 mb-1">
+        <strong>Today</strong><span id="today" class="small text-muted"></span>
+      </div>
+      <div id="people" class="small text-muted px-1">Loading…</div>
+    </div></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/face-api.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/face.js') }}"></script>
+<script>
+const API_PUNCH = '{{ url_for("erp.api_punch") }}', API_TODAY = '{{ url_for("erp.api_today") }}'
+const QKEY = 'tiledger-attendance-offline-punches'
+const btn = document.getElementById('btn'), result = document.getElementById('result')
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+const time = iso => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+const show = (cls, html) => { result.innerHTML = `<div class="alert alert-${cls} py-2 mb-0">${html}</div>` }
+
+// Offline punches wait here (with the moment they were taken) and are sent when the line is back.
+const readQ = () => { try { return JSON.parse(localStorage.getItem(QKEY) || '[]') } catch { return [] } }
+const writeQ = q => { try { localStorage.setItem(QKEY, JSON.stringify(q)) } catch {} ; showQ() }
+const showQ = () => { const n = readQ().length; document.getElementById('queue').textContent = n ? `${n} punch(es) waiting to send — they will go automatically when online` : '' }
+
+async function send(p) {
+  try { return await Face.post(API_PUNCH, p) } catch { return null } // null = offline
+}
+
+async function flushQ() {
+  const q = readQ(); if (!q.length) return
+  const keep = []
+  for (const p of q) {
+    const r = await send(p)
+    if (!r || r.status >= 500) keep.push(p)            // still offline / server busy — keep
+    else if (r.status === 401) { keep.push(p); break } // signed out — keep until signed in again
+    // matched / not matched / too old: done either way
+  }
+  writeQ(keep)
+  if (keep.length !== q.length) loadToday()
+}
+
+async function loadToday() {
+  try {
+    const r = await (await fetch(API_TODAY, { credentials: 'same-origin' })).json()
+    if (!r.success) { document.getElementById('people').innerHTML = `<span class="text-danger">${esc(r.error)}</span>`; return }
+    const d = r.data
+    document.getElementById('today').textContent = d.today
+    const rows = d.people.filter(p => p.day_type === 'work' || p.status !== '—')
+    const rest = d.people.length - rows.length
+    document.getElementById('people').innerHTML = (rows.length ? `<table class="table table-sm mb-1"><tbody>${rows.map(p => `
+      <tr><td>${esc(p.name)}${p.enrolled ? '' : ' <span class="badge bg-warning text-dark pill">no face</span>'}<div class="text-muted">${esc(p.shift || p.day_type)}</div></td>
+      <td class="text-end">${p.status === 'checked in' ? `<span class="badge bg-success">In ${time(p.since)}</span>` : p.status === 'checked out' ? `<span class="badge bg-secondary">Out ${time(p.since)}</span>` : '<span class="text-muted">—</span>'}</td></tr>`).join('')}</tbody></table>` : '<div class="py-2">No one on today\'s roster.</div>')
+      + (rest ? `<div class="text-muted">${rest} off / not rostered</div>` : '')
+  } catch { /* offline — keep the last list */ }
+}
+
+btn.onclick = async () => {
+  btn.disabled = true
+  const video = document.getElementById('video')
+  try {
+    const face = await Face.read(video, (i, n) => { btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Reading face ${i + 1}/${n}…` })
+    if (!face) { show('warning', 'No face seen — look at the camera and try again.'); return }
+    const p = { descriptor: face.descriptor, client_id: Face.uuid(), device: navigator.userAgent.slice(0, 80) }
+    const takenAt = new Date().toISOString()
+    const r = await send(p) // online: TiLedger's clock decides the time
+    if (!r || r.status >= 500) { p.at = takenAt; writeQ([...readQ(), p]); show('warning', `<b>Offline</b> — punch saved at ${time(takenAt)}, it will be sent automatically.`); return }
+    if (!r.success) { show('danger', esc(r.error)); return }
+    const d = r.data
+    if (!d.matched) { show('danger', esc(d.message)); return }
+    if (d.duplicate) { show('info', `<b>${esc(d.name)}</b> — already recorded (${d.punch_type === 'in' ? 'checked in' : 'checked out'}).`); return }
+    const late = d.late_minutes > 0 ? ` · <span class="text-danger">${d.late_minutes} min late</span>` : ''
+    const off = d.not_rostered ? ' · <span class="text-warning">not on today\'s roster</span>' : ''
+    show(d.punch_type === 'in' ? 'success' : 'secondary', `<b>${esc(d.name)}</b> — ${d.punch_type === 'in' ? 'checked IN' : 'checked OUT'} at ${time(d.at)}${late}${off}`)
+    loadToday()
+  } catch (e) {
+    show('danger', 'Could not read the face — try again.')
+  } finally {
+    btn.disabled = false
+    btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Check in / out'
+    setTimeout(() => { result.innerHTML = '' }, 8000)
+  }
+}
+
+;(async () => {
+  showQ(); loadToday()
+  try {
+    await Face.load('{{ url_for("static", filename="models") }}')
+    await Face.start(document.getElementById('video'))
+    btn.disabled = false
+    btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Check in / out'
+  } catch (e) {
+    btn.innerHTML = 'Camera not available'
+    show('danger', 'Allow the camera for this page, then reload.')
+  }
+  flushQ()
+  setInterval(flushQ, 30000)
+  setInterval(loadToday, 60000)
+  window.addEventListener('online', flushQ)
+})()
+</script>
+{% endblock %}

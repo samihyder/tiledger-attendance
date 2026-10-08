@@ -1,0 +1,9 @@
+{% extends 'erp/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="card mx-auto mt-5" style="max-width: 440px"><div class="card-body text-center p-4">
+  <h5 class="mb-2">{{ title }}</h5>
+  <p class="text-muted">{{ message }}</p>
+  {% if erp_url %}<a class="btn btn-primary" href="{{ erp_url }}">Open from TiLedger</a>{% else %}<a class="btn btn-outline-secondary" href="{{ url_for('erp.home') }}">Back</a>{% endif %}
+</div></div>
+{% endblock %}

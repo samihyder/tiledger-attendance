@@ -1,22 +1,9 @@
-from .auth_routes import auth_bp
-from .main_routes import main_bp
-from .employee_routes import employee_bp
-from .roster_routes import roster_bp
-from .attendance_routes import attendance_bp
-from .sync_routes import sync_bp
-from .payroll_routes import payroll_bp
-from .overtime_routes import overtime_bp
-from .users_routes import users_bp
-from .leave_routes import leave_bp
+# The attendance app does check-in / check-out and face enrolment only
+# (owner 2026-10-08). Staff, roster, rules, manual attendance, overtime,
+# leave and payroll moved to the TiLedger ERP — the old blueprints in this
+# folder are no longer registered.
+from .erp_routes import erp_bp
+
 
 def register_blueprints(app):
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(main_bp)
-    app.register_blueprint(employee_bp,  url_prefix='/employees')
-    app.register_blueprint(roster_bp,    url_prefix='/roster')
-    app.register_blueprint(attendance_bp, url_prefix='/attendance')
-    app.register_blueprint(sync_bp,      url_prefix='/sync')
-    app.register_blueprint(payroll_bp,   url_prefix='/payroll')
-    app.register_blueprint(overtime_bp,  url_prefix='/overtime')
-    app.register_blueprint(users_bp,     url_prefix='/users')
-    app.register_blueprint(leave_bp,     url_prefix='/leave')
+    app.register_blueprint(erp_bp)

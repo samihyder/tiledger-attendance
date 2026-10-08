@@ -1,0 +1,74 @@
+{% extends 'erp/base.html' %}
+{% block title %}Enrol faces{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="card"><div class="card-body p-2">
+      <div class="px-1 mb-1"><strong>Registered staff</strong>
+        <div class="small text-muted">Only staff registered in TiLedger › Payroll › Staff appear here.</div></div>
+      <div id="staff" class="list-group list-group-flush small">Loading…</div>
+    </div></div>
+  </div>
+  <div class="col-md-7">
+    <div class="cam mb-2"><video id="video" autoplay muted playsinline></video></div>
+    <div id="who" class="mb-2 text-muted">Choose a person on the left.</div>
+    <button id="btn" class="btn btn-primary btn-lg w-100" disabled><i class="bi bi-camera me-2"></i>Enrol face</button>
+    <div id="result" class="result mt-2"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/face-api.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/face.js') }}"></script>
+<script>
+const API = '{{ url_for("erp.api_enroll") }}'
+const btn = document.getElementById('btn'), result = document.getElementById('result')
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+const show = (cls, html) => { result.innerHTML = `<div class="alert alert-${cls} py-2 mb-0">${html}</div>` }
+let staff = [], chosen = null, camOk = false
+
+function render() {
+  document.getElementById('staff').innerHTML = staff.length ? staff.map(s => `
+    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between ${chosen?.id === s.id ? 'active' : ''}" data-id="${esc(s.id)}">
+      <span>${esc(s.name)} <span class="opacity-75">${esc(s.code || '')}</span></span>
+      ${s.enrolled ? '<span class="badge bg-success">enrolled</span>' : '<span class="badge bg-warning text-dark">no face</span>'}
+    </button>`).join('') : '<div class="p-2">No registered staff.</div>'
+  document.querySelectorAll('#staff [data-id]').forEach(b => b.onclick = () => {
+    chosen = staff.find(s => s.id === b.dataset.id); render()
+    document.getElementById('who').innerHTML = `<b>${esc(chosen.name)}</b> — ${chosen.enrolled ? 'already enrolled; enrolling again replaces the face.' : 'look straight at the camera.'}`
+    btn.disabled = !camOk
+  })
+}
+
+async function load() {
+  try {
+    const r = await (await fetch(API, { credentials: 'same-origin' })).json()
+    if (!r.success) { document.getElementById('staff').innerHTML = `<div class="p-2 text-danger">${esc(r.error)}</div>`; return }
+    staff = r.data.staff; render()
+  } catch { document.getElementById('staff').innerHTML = '<div class="p-2 text-danger">Offline — enrolment needs the internet.</div>' }
+}
+
+btn.onclick = async () => {
+  if (!chosen) return
+  btn.disabled = true
+  try {
+    const face = await Face.read(document.getElementById('video'), (i, n) => { btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Reading face ${i + 1}/${n}…` })
+    if (!face) { show('warning', 'No face seen — good light, look at the camera, try again.'); return }
+    const r = await Face.post(API, { staff_id: chosen.id, descriptor: face.descriptor, quality: face.quality })
+    if (!r.success) { show('danger', esc(r.error)); return }
+    show('success', `<b>${esc(r.data.name)}</b> enrolled.`)
+    await load()
+  } catch { show('danger', 'Could not save — check the internet and try again.') }
+  finally { btn.disabled = false; btn.innerHTML = '<i class="bi bi-camera me-2"></i>Enrol face' }
+}
+
+;(async () => {
+  load()
+  try {
+    await Face.load('{{ url_for("static", filename="models") }}')
+    await Face.start(document.getElementById('video'))
+    camOk = true; btn.disabled = !chosen
+  } catch { show('danger', 'Allow the camera for this page, then reload.') }
+})()
+</script>
+{% endblock %}
