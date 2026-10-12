@@ -52,45 +52,9 @@ class Config:
     DEFAULT_GRACE_MINUTES = 10
     PUNCH_COOLDOWN_MINUTES = 1   # prevent duplicate punches within N minutes
 
-    # Super Admin override secondary password
-    # DB value (app_settings key 'override_password') takes precedence over env var.
-    _OVERRIDE_PASSWORD_ENV = os.environ.get('OVERRIDE_PASSWORD', 'override@2026')
-
-    @classmethod
-    def get_override_password(cls) -> str:
-        """Read override password from DB (app_settings) or fall back to env var."""
-        try:
-            import db_manager as _db
-            stored = _db.get_setting('override_password')
-            if stored:
-                return stored
-        except Exception:
-            pass
-        return cls._OVERRIDE_PASSWORD_ENV
-
-    # Attendance Supabase (DB 1) — primary sync target
-    SUPABASE_URL         = os.environ.get('SUPABASE_URL', '')
-    SUPABASE_ANON_KEY    = os.environ.get('SUPABASE_ANON_KEY', '')
-    SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
-    # Use service key for writes; fall back to anon
-    SUPABASE_KEY         = os.environ.get('SUPABASE_SERVICE_KEY', '') or os.environ.get('SUPABASE_ANON_KEY', '')
-    SUPABASE_TABLE       = os.environ.get('SUPABASE_TABLE', 'attendance_daily')
-
-    # ERP Supabase (DB 2 — kitchenosv2) — full mirror target
-    ERP_SUPABASE_URL         = os.environ.get('ERP_SUPABASE_URL', '')
-    ERP_SUPABASE_SERVICE_KEY = os.environ.get('ERP_SUPABASE_SERVICE_KEY', '')
-
-    # ERP attendance webhook — event-triggered sync on shift close (punch-out),
-    # replacing the manual/scheduled ERP_SUPABASE_* mirror above for
-    # attendance_daily specifically. ERP_ENTITY_ID is the kitchenosv2 entity
-    # this deployment's attendance data belongs to (single-entity mapping,
-    # same convention as kitchenosv2's own NEXT_PUBLIC_ENTITY_ID — a real
-    # per-employee branch mapping is separate, larger scope).
-    ERP_WEBHOOK_URL           = os.environ.get('ERP_WEBHOOK_URL', '')
-    ATTENDANCE_WEBHOOK_SECRET = os.environ.get('ATTENDANCE_WEBHOOK_SECRET', '')
-    ERP_ENTITY_ID             = os.environ.get('ERP_ENTITY_ID', '')
-
-    SYNC_BATCH_SIZE = 200          # max records per sync request
+    # Since 2026-10-08 the app has no database of its own: it signs in with the ERP
+    # login and calls the ERP (erp_client.py, ERP_BASE_URL). The old attendance
+    # database, its logins and the sync / webhook settings were removed 2026-10-12.
 
     # Face recognition
     FACE_MATCH_THRESHOLD = 0.55      # Euclidean distance — lower = stricter
