@@ -211,6 +211,7 @@ async function punch(intent) {
     const d = r.data
     if (!d.matched) { beep(false); show('err', 'bi-person-x', 'Face not recognised', esc(d.message)); return }
     if (d.already === 'in') { beep(false); show('warn', 'bi-info-circle', `${esc(d.name)} — already checked in`, `Checked in at ${hhmm(d.since)}. To leave, tap <b>CHECK OUT</b>.`); return }
+    if (d.already === 'out') { beep(false); show('warn', 'bi-door-closed', `${esc(d.name)} — already checked out today`, `${d.checked_in_at ? `In ${hhmm(d.checked_in_at)} · ` : ''}Out ${hhmm(d.since)}. The next check-in opens on your next shift. If this is wrong, ask the manager to correct it in Payroll.`); return }
     if (d.duplicate) { beep(true); show('warn', 'bi-check2', `${esc(d.name)} — already recorded`, `Your ${d.punch_type === 'in' ? 'check-in' : 'check-out'} was saved a moment ago.`); return }
     beep(true)
     if (d.punch_type === 'in') {
