@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Attendance{% endblock %} · TiLedger</title>
+  <link rel="manifest" href="{{ url_for('erp.manifest') }}">
+  <meta name="theme-color" content="#0F172A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Attendance">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='pwa/apple-touch-icon.png') }}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='pwa/icon-192.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons.min.css') }}">
   <style>
@@ -30,6 +37,7 @@
   <main class="container py-3" style="max-width: 980px">
     {% block content %}{% endblock %}
   </main>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('{{ url_for("erp.service_worker") }}', { scope: '{{ url_for("erp.home") }}' }).catch(() => {})</script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

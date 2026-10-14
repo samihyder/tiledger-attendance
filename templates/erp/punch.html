@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Check in / out · TiLedger Attendance</title>
+  <link rel="manifest" href="{{ url_for('erp.manifest') }}">
+  <meta name="theme-color" content="#0F172A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Attendance">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='pwa/apple-touch-icon.png') }}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='pwa/icon-192.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons.min.css') }}">
   <style>
     /* TiLedger attendance kiosk — one screen: camera, Check IN / Check OUT, today's board (owner 2026-10-14) */
@@ -11,8 +19,11 @@
             --in:#16A34A; --in-soft:#DCFCE7; --out:#EA580C; --out-soft:#FFEDD5; --red:#DC2626; --amber:#D97706; }
     * { box-sizing: border-box }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: Inter, -apple-system, Segoe UI, Roboto, Arial, sans-serif }
-    .app { display: grid; grid-template-rows: auto 1fr; height: 100vh }
-    header { display: flex; align-items: center; gap: 14px; padding: 12px 22px; background: var(--navy); color: #fff }
+    .app { display: grid; grid-template-rows: auto 1fr; height: 100vh; height: 100dvh }
+    header { display: flex; align-items: center; gap: 14px; padding: 12px 22px; padding-top: calc(12px + env(safe-area-inset-top)); padding-left: calc(22px + env(safe-area-inset-left)); padding-right: calc(22px + env(safe-area-inset-right)); background: var(--navy); color: #fff }
+    button, .chip { -webkit-tap-highlight-color: transparent; touch-action: manipulation }
+    body { -webkit-user-select: none; user-select: none; overscroll-behavior: none }
+    input { -webkit-user-select: text; user-select: text }
     header .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px }
     header .brand small { display: block; font-weight: 500; font-size: 11px; color: #94A3B8 }
     header .clock { margin-left: auto; text-align: right; line-height: 1.1 }
@@ -70,7 +81,18 @@
     .tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-left: 4px }
     .tag.late { background: #FEE2E2; color: var(--red) } .tag.noface { background: #FEF3C7; color: #92400E }
     .empty { padding: 26px; text-align: center; color: var(--muted); font-size: 14px }
-    @media (max-width: 860px) { main { grid-template-columns: 1fr; overflow-y: auto } .app { height: auto; min-height: 100vh } .cam { min-height: 300px; flex: none } .btn { font-size: 20px; padding: 18px 10px } header nav { display: none } }
+    .install { display: none } .install.show { display: inline-flex }
+    /* iPad / tablet landscape (1024–1366): two columns, roomy buttons */
+    @media (min-width: 1000px) and (max-width: 1400px) { main { gap: 16px; padding: 16px 18px } .btn { padding: 26px 12px; font-size: 26px } .btn i { font-size: 34px } }
+    /* iPad / tablet portrait (≈ 744–1000 px): camera + buttons on top, today's board below, no page scroll */
+    @media (max-width: 999px) and (min-width: 700px) and (orientation: portrait) {
+      main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); padding-bottom: calc(18px + env(safe-area-inset-bottom)) }
+      .left { display: grid; grid-template-columns: 1.2fr 1fr; grid-template-areas: 'banner banner' 'queue queue' 'cam act' 'cam res'; gap: 14px }
+      #signedOut { grid-area: banner } #queue { grid-area: queue } .cam { grid-area: cam; min-height: 340px } .actions { grid-area: act; grid-template-columns: 1fr; align-content: start } .result { grid-area: res; min-height: 0 }
+      .btn { padding: 26px 12px }
+    }
+    /* phones and narrow windows: one column, scroll */
+    @media (max-width: 699px), (max-width: 999px) and (orientation: landscape) { main { grid-template-columns: 1fr; overflow-y: auto } .app { height: auto; min-height: 100dvh } .cam { min-height: 300px; flex: none } .btn { font-size: 20px; padding: 18px 10px } header nav .hide-sm { display: none } .right { min-height: 420px } }
   </style>
 </head>
 <body>
@@ -81,8 +103,9 @@
       <div>TiLedger Attendance<small>{{ session.get('erp_name') }}</small></div>
     </div>
     <nav>
-      {% if 'attendance:enroll' in session.get('erp_perms', []) %}<a href="{{ url_for('erp.enroll') }}"><i class="bi bi-person-plus"></i> Enrol faces</a>{% endif %}
-      <a href="{{ url_for('erp.logout') }}"><i class="bi bi-box-arrow-right"></i> Sign out</a>
+      {% if 'attendance:enroll' in session.get('erp_perms', []) %}<a href="{{ url_for('erp.enroll') }}" class="hide-sm"><i class="bi bi-person-plus"></i> Enrol faces</a>{% endif %}
+      <a href="#" id="installBtn" class="install"><i class="bi bi-download"></i> Install app</a>
+      <a href="{{ url_for('erp.logout') }}" class="hide-sm"><i class="bi bi-box-arrow-right"></i> Sign out</a>
     </nav>
     <div class="clock"><b id="clock">--:--:--</b><span id="date"></span></div>
   </header>
@@ -170,7 +193,11 @@ function render() {
   const groups = [
     ['On shift', ppl.filter(p => p.state === 'in'), p => `<b style="color:var(--in)">In ${hhmm(p.in_at)}</b>${dur((now - Date.parse(p.in_at)) / 60000)}`],
     ['Not in yet', ppl.filter(p => p.state === 'not_in'), p => `<b>${p.shift_start ? `Starts ${esc(p.shift_start)}` : '—'}</b>${lateNow(p) ? '<span class="tag late">late</span>' : ''}`],
-    ['Checked out', ppl.filter(p => p.state === 'out'), p => `<b>${hhmm(p.in_at)} – ${hhmm(p.out_at)}</b>${p.in_at && p.out_at ? dur((Date.parse(p.out_at) - Date.parse(p.in_at)) / 60000) : ''}`],
+    ['Checked out', ppl.filter(p => p.state === 'out'), p => {
+      const h = p.hours
+      const extra = !h ? '' : h.short > 0 ? ` <span class="tag late">short ${dur(h.short)}</span>` : h.extra > 0 ? ` <span class="tag" style="background:var(--in-soft);color:#166534">+${dur(h.extra)}</span>` : ''
+      return `<b>In ${hhmm(p.in_at)} → Out ${hhmm(p.out_at)}</b>${h ? `Served ${dur(h.worked)}${extra}` : 'no check-in found'}`
+    }],
   ]
   let html = groups.filter(g => g[1].length).map(([t, list, fn]) => `<div class="group">${t} · ${list.length}</div>${list.map(p => row(p, fn(p))).join('')}`).join('')
   const off = ppl.filter(p => p.state === 'off').length
@@ -211,17 +238,28 @@ async function punch(intent) {
     const d = r.data
     if (!d.matched) { beep(false); show('err', 'bi-person-x', 'Face not recognised', esc(d.message)); return }
     if (d.already === 'in') { beep(false); show('warn', 'bi-info-circle', `${esc(d.name)} — already checked in`, `Checked in at ${hhmm(d.since)}. To leave, tap <b>CHECK OUT</b>.`); return }
+    if (d.already === 'too_soon') { beep(false); show('warn', 'bi-hourglass-split', `${esc(d.name)} — you checked in ${d.minutes} min ago`, `Checked in at ${hhmm(d.since)}. If you are starting your shift you are already in — nothing to do. Check out at the end of your shift.`); return }
     if (d.already === 'out') { beep(false); show('warn', 'bi-door-closed', `${esc(d.name)} — already checked out today`, `${d.checked_in_at ? `In ${hhmm(d.checked_in_at)} · ` : ''}Out ${hhmm(d.since)}. The next check-in opens on your next shift. If this is wrong, ask the manager to correct it in Payroll.`); return }
     if (d.duplicate) { beep(true); show('warn', 'bi-check2', `${esc(d.name)} — already recorded`, `Your ${d.punch_type === 'in' ? 'check-in' : 'check-out'} was saved a moment ago.`); return }
     beep(true)
+    const DAY = { off: 'your day off', holiday: 'a holiday', leave: `leave${d.leave_type ? ` (${esc(d.leave_type)})` : ''}`, not_rostered: 'a day you are not on the roster' }
+    const notes = (d.notes || []).map(n => `<br><span style="color:var(--amber)">⚠ ${esc(n.replace(/^\w+: /, ''))}</span>`).join('')
     if (d.punch_type === 'in') {
-      const late = d.late_minutes > 0 ? ` · <b style="color:var(--red)">${d.late_minutes} min late</b>` : ' · on time'
-      show('ok-in', 'bi-box-arrow-in-right', `Welcome, ${esc(d.name)}`, `Checked IN at <b>${hhmm(d.at)}</b>${d.shift ? ` · ${esc(d.shift)}` : ''}${late}${d.not_rostered ? ' · <b>not on today\'s roster</b>' : ''}`)
+      if (d.day_kind && d.day_kind !== 'work') {
+        show('warn', 'bi-calendar-x', `${esc(d.name)} — checked in on ${DAY[d.day_kind] || 'a day off'}`, `Checked IN at <b>${hhmm(d.at)}</b>. This is recorded as working on ${DAY[d.day_kind] || 'a day off'} — the manager will see it in Payroll.${notes}`)
+      } else {
+        const late = d.late_minutes > 0 ? ` · <b style="color:var(--red)">${d.late_minutes} min late</b>` : ' · on time'
+        show('ok-in', 'bi-box-arrow-in-right', `Welcome, ${esc(d.name)}`, `Checked IN at <b>${hhmm(d.at)}</b>${d.shift ? ` · ${esc(d.shift)}` : ''}${late}${notes}`)
+      }
+    } else if (d.no_check_in) {
+      show('warn', 'bi-question-circle', `${esc(d.name)} — checked out, but no check-in was found`, `Checked OUT at <b>${hhmm(d.at)}</b>. Hours can't be counted without a check-in — the manager will correct it in Payroll.${notes}`)
     } else {
-      const ot = d.ot_minutes > 0 ? ` · <b style="color:var(--in)">overtime ${dur(d.ot_minutes)}</b>` : ''
-      const early = d.early_leave_minutes > 0 ? ` · left ${d.early_leave_minutes} min early` : ''
-      const worked = d.no_check_in ? ' · <b style="color:var(--amber)">no check-in found — the manager will check</b>' : ` · worked <b>${dur(d.worked_minutes)}</b>${ot}${early}`
-      show('ok-out', 'bi-box-arrow-right', `Goodbye, ${esc(d.name)}`, `Checked OUT at <b>${hhmm(d.at)}</b>${worked}`)
+      const std = d.standard_minutes > 0
+      const vs = !std ? (d.day_kind && d.day_kind !== 'work' ? ` · worked on ${DAY[d.day_kind] || 'a day off'}` : '')
+        : d.short_minutes > 0 ? ` · <b style="color:var(--red)">short ${dur(d.short_minutes)}</b> of the ${dur(d.standard_minutes)} day`
+        : d.extra_minutes > 0 ? ` · <b style="color:var(--in)">${dur(d.extra_minutes)} extra</b>${d.ot_minutes > 0 ? ` (overtime ${dur(d.ot_minutes)})` : ' (under the overtime minimum)'}`
+        : ' · full day'
+      show('ok-out', 'bi-box-arrow-right', `Goodbye, ${esc(d.name)}`, `In <b>${hhmm(d.checked_in_at)}</b> → Out <b>${hhmm(d.at)}</b> · served <b>${dur(d.worked_minutes)}</b>${vs}${notes}`)
     }
     loadToday()
   } catch (e) {
@@ -233,6 +271,21 @@ async function punch(intent) {
 }
 $('btnIn').onclick = () => punch('in')
 $('btnOut').onclick = () => punch('out')
+
+// ── installable app: register the service worker; offer "Install app" where the browser allows ──
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('{{ url_for("erp.service_worker") }}', { scope: '{{ url_for("erp.home") }}' }).catch(() => {})
+let installEvt = null
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('installBtn').classList.add('show') })
+$('installBtn').onclick = async ev => {
+  ev.preventDefault()
+  if (installEvt) { installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('installBtn').classList.remove('show') }
+}
+// iPad / iPhone Safari has no install prompt: show how, once, until the app runs from the Home Screen
+const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone
+if (!standalone && /iPad|iPhone|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document) {
+  $('installBtn').classList.add('show')
+  $('installBtn').onclick = ev => { ev.preventDefault(); show('idle', 'bi-box-arrow-up', 'Install on this iPad', 'Tap the Share button <i class="bi bi-box-arrow-up"></i> in Safari, then <b>Add to Home Screen</b>. Open Attendance from the new icon — it runs full screen.') }
+}
 
 ;(async () => {
   showQ(); loadToday()

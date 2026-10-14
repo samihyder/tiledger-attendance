@@ -104,3 +104,56 @@ def api_enroll():
     if request.method == 'GET':
         return _proxy('GET', '/api/attendance-app/enroll')
     return _proxy('POST', '/api/attendance-app/enroll', request.get_json(silent=True) or {})
+
+
+# ── Installable app (PWA) — iPad / Android tablet "Add to Home Screen" (owner 2026-10-14) ──
+@erp_bp.route('/manifest.webmanifest')
+def manifest():
+    from flask import current_app
+    home = url_for('erp.home')
+    body = {
+        'name': 'TiLedger Attendance', 'short_name': 'Attendance',
+        'description': 'Check in and check out with your face — TiLedger by Mutex Systems',
+        'id': home, 'start_url': url_for('erp.punch'), 'scope': home,
+        'display': 'standalone', 'orientation': 'any',
+        'background_color': '#F3F5F9', 'theme_color': '#0F172A',
+        'icons': [
+            {'src': url_for('static', filename='pwa/icon-192.png'), 'sizes': '192x192', 'type': 'image/png'},
+            {'src': url_for('static', filename='pwa/icon-512.png'), 'sizes': '512x512', 'type': 'image/png'},
+            {'src': url_for('static', filename='pwa/icon-maskable-512.png'), 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'},
+        ],
+    }
+    resp = current_app.response_class(__import__('json').dumps(body), mimetype='application/manifest+json')
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@erp_bp.route('/sw.js')
+def service_worker():
+    from flask import current_app
+    root = url_for('erp.home').rstrip('/') + '/'
+    static_root = url_for('static', filename='')
+    js = f"""// TiLedger Attendance service worker — makes the punch screen installable and quick to open.
+// Static files (styles, face models) are cached; pages are network-first with the last copy as a
+// fallback; sign-in and every /api/ call (punches) always go to the network — never cached.
+const CACHE = 'tl-attendance-v2'
+const STATIC = {static_root!r}
+self.addEventListener('install', e => self.skipWaiting())
+self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())))
+self.addEventListener('fetch', e => {{
+  const req = e.request, url = new URL(req.url)
+  if (req.method !== 'GET' || url.origin !== location.origin) return
+  if (url.pathname.includes('/api/') || url.pathname.includes('/sso') || url.pathname.includes('/signin') || url.pathname.includes('/logout')) return
+  if (url.pathname.startsWith(STATIC)) {{
+    e.respondWith(caches.open(CACHE).then(c => c.match(req).then(hit => hit || fetch(req).then(res => {{ if (res.ok) c.put(req, res.clone()); return res }}))))
+    return
+  }}
+  if (req.mode === 'navigate') {{
+    e.respondWith(fetch(req).then(res => {{ if (res.ok && !res.redirected) {{ const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)) }} return res }}).catch(() => caches.match(req)))
+  }}
+}})
+"""
+    resp = current_app.response_class(js, mimetype='application/javascript')
+    resp.headers['Service-Worker-Allowed'] = root
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
