@@ -77,7 +77,7 @@ def logout():
 @erp_bp.route('/punch')
 @need('attendance:punch')
 def punch():
-    return render_template('erp/punch.html')
+    return render_template('erp/punch.html', erp_url=f'{ERP_BASE_URL}/attendance-app')
 
 
 @erp_bp.route('/api/today')

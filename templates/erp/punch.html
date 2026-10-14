@@ -1,113 +1,255 @@
-{% extends 'erp/base.html' %}
-{% block title %}Check in / out{% endblock %}
-{% block content %}
-<div class="row g-3">
-  <div class="col-md-7">
-    <div class="cam mb-2"><video id="video" autoplay muted playsinline></video></div>
-    <button id="btn" class="btn btn-primary btn-lg w-100" disabled><i class="bi bi-person-bounding-box me-2"></i>Loading…</button>
-    <div id="result" class="result mt-2"></div>
-    <div id="queue" class="small text-warning"></div>
-  </div>
-  <div class="col-md-5">
-    <div class="card"><div class="card-body p-2">
-      <div class="d-flex justify-content-between align-items-center px-1 mb-1">
-        <strong>Today</strong><span id="today" class="small text-muted"></span>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Check in / out · TiLedger Attendance</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons.min.css') }}">
+  <style>
+    /* TiLedger attendance kiosk — one screen: camera, Check IN / Check OUT, today's board (owner 2026-10-14) */
+    :root { --mark:#4F8EF7; --accent:#2563EB; --navy:#0F172A; --ink:#1F2937; --muted:#6B7280; --line:#E5E7EB; --bg:#F3F5F9; --card:#fff;
+            --in:#16A34A; --in-soft:#DCFCE7; --out:#EA580C; --out-soft:#FFEDD5; --red:#DC2626; --amber:#D97706; }
+    * { box-sizing: border-box }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: Inter, -apple-system, Segoe UI, Roboto, Arial, sans-serif }
+    .app { display: grid; grid-template-rows: auto 1fr; height: 100vh }
+    header { display: flex; align-items: center; gap: 14px; padding: 12px 22px; background: var(--navy); color: #fff }
+    header .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px }
+    header .brand small { display: block; font-weight: 500; font-size: 11px; color: #94A3B8 }
+    header .clock { margin-left: auto; text-align: right; line-height: 1.1 }
+    header .clock b { font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: .02em }
+    header .clock span { display: block; font-size: 12px; color: #94A3B8 }
+    header nav { display: flex; gap: 8px; margin-left: 18px }
+    header nav a { color: #CBD5E1; text-decoration: none; font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid #334155 }
+    header nav a:hover { color: #fff; border-color: #64748B }
+    main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 18px; padding: 18px 22px; min-height: 0 }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 6px 20px rgba(15, 23, 42, .05) }
+    .left { display: flex; flex-direction: column; gap: 14px; min-height: 0 }
+    .cam { position: relative; flex: 1; min-height: 240px; background: #000; border-radius: 18px; overflow: hidden }
+    .cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1) }
+    .cam .guide { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none }
+    .cam .guide i { width: 46%; max-width: 280px; aspect-ratio: 3/4; border: 3px dashed rgba(255, 255, 255, .55); border-radius: 50% }
+    .cam .hint { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; color: #fff; font-size: 14px; font-weight: 600; text-shadow: 0 1px 3px rgba(0, 0, 0, .6) }
+    .cam.reading .guide i { border-color: #FACC15; border-style: solid; animation: pulse 1s infinite }
+    @keyframes pulse { 50% { opacity: .45 } }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 22px 12px; border: 0; border-radius: 18px; font-size: 24px; font-weight: 800; letter-spacing: .02em; color: #fff; cursor: pointer; font-family: inherit; box-shadow: 0 8px 22px rgba(0, 0, 0, .12); transition: transform .08s; text-align: left }
+    .btn:active { transform: scale(.98) }
+    .btn i { font-size: 30px }
+    .btn small { display: block; font-size: 12px; font-weight: 600; opacity: .85; letter-spacing: 0 }
+    .btn.in { background: linear-gradient(135deg, #22C55E, var(--in)) }
+    .btn.out { background: linear-gradient(135deg, #FB923C, var(--out)) }
+    .btn:disabled { opacity: .45; cursor: not-allowed }
+    .result { min-height: 96px; padding: 16px 18px; display: flex; align-items: center; gap: 14px }
+    .result .ico { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center; font-size: 28px; flex-shrink: 0 }
+    .result h3 { margin: 0; font-size: 20px } .result p { margin: 4px 0 0; color: var(--muted); font-size: 14px }
+    .result.idle .ico { background: #EEF2FF; color: var(--accent) }
+    .result.ok-in .ico { background: var(--in-soft); color: var(--in) } .result.ok-out .ico { background: var(--out-soft); color: var(--out) }
+    .result.warn .ico { background: #FEF3C7; color: var(--amber) } .result.err .ico { background: #FEE2E2; color: var(--red) }
+    .banner { padding: 10px 14px; border-radius: 12px; font-size: 14px; display: none; align-items: center; gap: 10px }
+    .banner.show { display: flex }
+    .banner.warn { background: #FEF3C7; color: #92400E } .banner.err { background: #FEE2E2; color: #991B1B }
+    .banner a, .banner button { margin-left: auto; color: inherit; font-weight: 700; background: none; border: 1px solid currentColor; border-radius: 8px; padding: 4px 10px; cursor: pointer; text-decoration: none; font-family: inherit; white-space: nowrap }
+    .right { display: flex; flex-direction: column; min-height: 0 }
+    .board-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line) }
+    .board-head h2 { margin: 0 0 10px; font-size: 16px; display: flex; justify-content: space-between; align-items: center }
+    .board-head h2 span { font-size: 12px; color: var(--muted); font-weight: 500 }
+    .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px }
+    .chip { border-radius: 12px; padding: 8px 10px; cursor: pointer; border: 1.5px solid transparent; user-select: none }
+    .chip b { display: block; font-size: 22px } .chip span { font-size: 11.5px; font-weight: 600 }
+    .chip.on { background: var(--in-soft); color: #166534 } .chip.notin { background: #FEF3C7; color: #92400E } .chip.out { background: #F1F5F9; color: #334155 }
+    .chip.active { border-color: currentColor }
+    .search { margin-top: 10px; width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); font-size: 14px; font-family: inherit }
+    .list { overflow-y: auto; padding: 6px 8px 10px; flex: 1 }
+    .group { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 10px 8px 4px }
+    .row { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 10px }
+    .row:hover { background: #F8FAFC }
+    .av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; flex-shrink: 0 }
+    .row .who { flex: 1; min-width: 0 } .row .who b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .row .who span { font-size: 12px; color: var(--muted) }
+    .row .t { text-align: right; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--muted) } .row .t b { display: block; font-size: 13.5px; color: var(--ink) }
+    .tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-left: 4px }
+    .tag.late { background: #FEE2E2; color: var(--red) } .tag.noface { background: #FEF3C7; color: #92400E }
+    .empty { padding: 26px; text-align: center; color: var(--muted); font-size: 14px }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; overflow-y: auto } .app { height: auto; min-height: 100vh } .cam { min-height: 300px; flex: none } .btn { font-size: 20px; padding: 18px 10px } header nav { display: none } }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg width="32" height="32" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="92" fill="#4F8EF7"/><path d="M122 147h268v58H288v160h-64V205H122v-58Z" fill="#fff"/><path d="M330 237h60v128H220v-58h110v-70Z" fill="#DCE9FF"/></svg>
+      <div>TiLedger Attendance<small>{{ session.get('erp_name') }}</small></div>
+    </div>
+    <nav>
+      {% if 'attendance:enroll' in session.get('erp_perms', []) %}<a href="{{ url_for('erp.enroll') }}"><i class="bi bi-person-plus"></i> Enrol faces</a>{% endif %}
+      <a href="{{ url_for('erp.logout') }}"><i class="bi bi-box-arrow-right"></i> Sign out</a>
+    </nav>
+    <div class="clock"><b id="clock">--:--:--</b><span id="date"></span></div>
+  </header>
+
+  <main>
+    <section class="left">
+      <div id="signedOut" class="banner err"><i class="bi bi-shield-exclamation"></i><span>This screen was signed out. Punches are kept and sent after you sign in again.</span><a href="{{ erp_url }}">Sign in again</a></div>
+      <div id="queue" class="banner warn"><i class="bi bi-cloud-arrow-up"></i><span id="queueText"></span><button id="sendNow" type="button">Send now</button></div>
+      <div id="cam" class="cam"><video id="video" autoplay muted playsinline></video><div class="guide"><i></i></div><div id="hint" class="hint">Starting camera…</div></div>
+      <div class="actions">
+        <button id="btnIn" class="btn in" disabled><i class="bi bi-box-arrow-in-right"></i><span>CHECK IN<small>Starting my shift</small></span></button>
+        <button id="btnOut" class="btn out" disabled><i class="bi bi-box-arrow-right"></i><span>CHECK OUT<small>Ending my shift</small></span></button>
       </div>
-      <div id="people" class="small text-muted px-1">Loading…</div>
-    </div></div>
-  </div>
+      <div id="result" class="card result idle"><div class="ico"><i class="bi bi-person-bounding-box"></i></div><div><h3>Tap Check IN or Check OUT</h3><p>Then look at the camera for 2 seconds.</p></div></div>
+    </section>
+
+    <section class="card right">
+      <div class="board-head">
+        <h2>Today <span id="today"></span></h2>
+        <div class="chips">
+          <div class="chip on" data-f="in"><b id="cIn">0</b><span>On shift</span></div>
+          <div class="chip notin" data-f="not_in"><b id="cNot">0</b><span>Not in yet</span></div>
+          <div class="chip out" data-f="out"><b id="cOut">0</b><span>Checked out</span></div>
+        </div>
+        <input id="search" class="search" placeholder="Find a name">
+      </div>
+      <div id="list" class="list"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
 </div>
-{% endblock %}
-{% block scripts %}
+
 <script src="{{ url_for('static', filename='vendor/face-api.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/face.js') }}"></script>
 <script>
 const API_PUNCH = '{{ url_for("erp.api_punch") }}', API_TODAY = '{{ url_for("erp.api_today") }}'
 const QKEY = 'tiledger-attendance-offline-punches'
-const btn = document.getElementById('btn'), result = document.getElementById('result')
+const $ = id => document.getElementById(id)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-const time = iso => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-const show = (cls, html) => { result.innerHTML = `<div class="alert alert-${cls} py-2 mb-0">${html}</div>` }
+const hhmm = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
+const dur = min => { min = Math.max(0, Math.round(min || 0)); return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} m` }
+const COLORS = ['#2563EB', '#16A34A', '#EA580C', '#7C3AED', '#0891B2', '#DB2777', '#CA8A04', '#4F46E5']
+const avatar = n => { const i = String(n || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase(); const c = COLORS[[...String(n)].reduce((t, ch) => t + ch.charCodeAt(0), 0) % COLORS.length]; return `<div class="av" style="background:${c}">${esc(i)}</div>` }
+let board = { people: [] }, filter = null, busy = false, resetTimer = null
 
-// Offline punches wait here (with the moment they were taken) and are sent when the line is back.
-const readQ = () => { try { return JSON.parse(localStorage.getItem(QKEY) || '[]') } catch { return [] } }
-const writeQ = q => { try { localStorage.setItem(QKEY, JSON.stringify(q)) } catch {} ; showQ() }
-const showQ = () => { const n = readQ().length; document.getElementById('queue').textContent = n ? `${n} punch(es) waiting to send — they will go automatically when online` : '' }
+// ── clock ──
+const tick = () => { const d = new Date(); $('clock').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); $('date').textContent = d.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' }) }
+tick(); setInterval(tick, 1000)
 
-async function send(p) {
-  try { return await Face.post(API_PUNCH, p) } catch { return null } // null = offline
+// ── short confirmation tone (allowed by the browser after the first tap) ──
+let ac = null
+function beep(ok) { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); (ok ? [880, 1320] : [330, 260]).forEach((f, i) => { const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime + i * .13; o.frequency.value = f; g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.2, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + .25); o.connect(g).connect(ac.destination); o.start(t); o.stop(t + .27) }) } catch {} }
+
+function show(kind, icon, title, text) {
+  const r = $('result'); r.className = `card result ${kind}`
+  r.innerHTML = `<div class="ico"><i class="bi ${icon}"></i></div><div><h3>${title}</h3><p>${text || ''}</p></div>`
+  clearTimeout(resetTimer); resetTimer = setTimeout(() => show('idle', 'bi-person-bounding-box', 'Tap Check IN or Check OUT', 'Then look at the camera for 2 seconds.'), 12000)
 }
 
+// ── offline queue: punches taken without a connection wait here with their real time ──
+const readQ = () => { try { return JSON.parse(localStorage.getItem(QKEY) || '[]') } catch { return [] } }
+const writeQ = q => { try { localStorage.setItem(QKEY, JSON.stringify(q)) } catch {}; showQ() }
+function showQ() { const n = readQ().length; $('queue').classList.toggle('show', n > 0); $('queueText').textContent = `${n} punch${n === 1 ? '' : 'es'} waiting to send — they go automatically when online` }
+const send = async p => { try { return await Face.post(API_PUNCH, p) } catch { return null } }
+const signedOut = on => $('signedOut').classList.toggle('show', on)
 async function flushQ() {
   const q = readQ(); if (!q.length) return
   const keep = []
-  for (const p of q) {
-    const r = await send(p)
-    if (!r || r.status >= 500) keep.push(p)            // still offline / server busy — keep
-    else if (r.status === 401) { keep.push(p); break } // signed out — keep until signed in again
-    // matched / not matched / too old: done either way
+  for (let i = 0; i < q.length; i++) {
+    const r = await send(q[i])
+    if (!r || r.status >= 500) keep.push(q[i])
+    else if (r.status === 401) { signedOut(true); keep.push(...q.slice(i)); break }
   }
   writeQ(keep)
   if (keep.length !== q.length) loadToday()
 }
+$('sendNow').onclick = flushQ
 
+// ── today's board ──
+function render() {
+  const q = $('search').value.trim().toLowerCase()
+  const ppl = (board.people || []).filter(p => (!q || p.name.toLowerCase().includes(q)) && (!filter || p.state === filter))
+  const now = Date.now()
+  const lateNow = p => { if (!p.shift_start) return false; const [h, m] = p.shift_start.split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return now > d.getTime() + 15 * 60000 }
+  const row = (p, right) => `<div class="row">${avatar(p.name)}<div class="who"><b>${esc(p.name)}${p.enrolled ? '' : '<span class="tag noface">no face</span>'}</b><span>${esc(p.shift || (p.day_type === 'off' ? 'Off today' : p.day_type))}</span></div><div class="t">${right}</div></div>`
+  const groups = [
+    ['On shift', ppl.filter(p => p.state === 'in'), p => `<b style="color:var(--in)">In ${hhmm(p.in_at)}</b>${dur((now - Date.parse(p.in_at)) / 60000)}`],
+    ['Not in yet', ppl.filter(p => p.state === 'not_in'), p => `<b>${p.shift_start ? `Starts ${esc(p.shift_start)}` : '—'}</b>${lateNow(p) ? '<span class="tag late">late</span>' : ''}`],
+    ['Checked out', ppl.filter(p => p.state === 'out'), p => `<b>${hhmm(p.in_at)} – ${hhmm(p.out_at)}</b>${p.in_at && p.out_at ? dur((Date.parse(p.out_at) - Date.parse(p.in_at)) / 60000) : ''}`],
+  ]
+  let html = groups.filter(g => g[1].length).map(([t, list, fn]) => `<div class="group">${t} · ${list.length}</div>${list.map(p => row(p, fn(p))).join('')}`).join('')
+  const off = ppl.filter(p => p.state === 'off').length
+  if (off && !filter) html += `<div class="group">Off today · ${off}</div>`
+  $('list').innerHTML = html || '<div class="empty">No one matches.</div>'
+}
 async function loadToday() {
   try {
-    const r = await (await fetch(API_TODAY, { credentials: 'same-origin' })).json()
-    if (!r.success) { document.getElementById('people').innerHTML = `<span class="text-danger">${esc(r.error)}</span>`; return }
-    const d = r.data
-    document.getElementById('today').textContent = d.today
-    const rows = d.people.filter(p => p.day_type === 'work' || p.status !== '—')
-    const rest = d.people.length - rows.length
-    document.getElementById('people').innerHTML = (rows.length ? `<table class="table table-sm mb-1"><tbody>${rows.map(p => `
-      <tr><td>${esc(p.name)}${p.enrolled ? '' : ' <span class="badge bg-warning text-dark pill">no face</span>'}<div class="text-muted">${esc(p.shift || p.day_type)}</div></td>
-      <td class="text-end">${p.status === 'checked in' ? `<span class="badge bg-success">In ${time(p.since)}</span>` : p.status === 'checked out' ? `<span class="badge bg-secondary">Out ${time(p.since)}</span>` : '<span class="text-muted">—</span>'}</td></tr>`).join('')}</tbody></table>` : '<div class="py-2">No one on today\'s roster.</div>')
-      + (rest ? `<div class="text-muted">${rest} off / not rostered</div>` : '')
-  } catch { /* offline — keep the last list */ }
+    const res = await fetch(API_TODAY, { credentials: 'same-origin' })
+    if (res.status === 401) { signedOut(true); return }
+    const r = await res.json()
+    if (!r.success) { $('list').innerHTML = `<div class="empty">${esc(r.error)}</div>`; return }
+    signedOut(false)
+    board = r.data
+    $('today').textContent = new Date(`${board.today}T12:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
+    $('cIn').textContent = board.counts?.on_shift ?? 0; $('cNot').textContent = board.counts?.not_in ?? 0; $('cOut').textContent = board.counts?.checked_out ?? 0
+    render()
+  } catch { /* offline: keep the last board */ }
 }
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => { filter = filter === c.dataset.f ? null : c.dataset.f; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x.dataset.f === filter)); render() })
+$('search').oninput = render
 
-btn.onclick = async () => {
-  btn.disabled = true
-  const video = document.getElementById('video')
+// ── punch: the person chooses IN or OUT — no guessing ──
+async function punch(intent) {
+  if (busy) return
+  busy = true; $('btnIn').disabled = $('btnOut').disabled = true
+  const cam = $('cam'); cam.classList.add('reading')
   try {
-    const face = await Face.read(video, (i, n) => { btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Reading face ${i + 1}/${n}…` })
-    if (!face) { show('warning', 'No face seen — look at the camera and try again.'); return }
-    const p = { descriptor: face.descriptor, client_id: Face.uuid(), device: navigator.userAgent.slice(0, 80) }
+    show('idle', 'bi-camera', intent === 'in' ? 'Checking IN…' : 'Checking OUT…', 'Look at the camera')
+    const face = await Face.read($('video'), (i, n) => { $('hint').textContent = `Reading face ${i + 1} of ${n}…` })
+    if (!face) { beep(false); show('warn', 'bi-emoji-neutral', 'No face seen', 'Stand in front of the camera, inside the oval, and try again.'); return }
+    const p = { descriptor: face.descriptor, client_id: Face.uuid(), intent, device: navigator.userAgent.slice(0, 80) }
     const takenAt = new Date().toISOString()
-    const r = await send(p) // online: TiLedger's clock decides the time
-    if (!r || r.status >= 500) { p.at = takenAt; writeQ([...readQ(), p]); show('warning', `<b>Offline</b> — punch saved at ${time(takenAt)}, it will be sent automatically.`); return }
-    if (!r.success) { show('danger', esc(r.error)); return }
+    const r = await send(p)
+    if (!r || r.status >= 500) { p.at = takenAt; writeQ([...readQ(), p]); beep(true); show('warn', 'bi-wifi-off', `Saved offline — ${intent === 'in' ? 'check-in' : 'check-out'} at ${hhmm(takenAt)}`, 'It will be sent automatically when the connection is back.'); return }
+    if (r.status === 401) { p.at = takenAt; writeQ([...readQ(), p]); signedOut(true); beep(false); show('err', 'bi-shield-exclamation', 'This screen is signed out', 'Your punch is kept. Ask the manager to sign in again.'); return }
+    if (!r.success) { beep(false); show('err', 'bi-x-octagon', 'Could not record', esc(r.error)); return }
     const d = r.data
-    if (!d.matched) { show('danger', esc(d.message)); return }
-    if (d.duplicate) { show('info', `<b>${esc(d.name)}</b> — already recorded (${d.punch_type === 'in' ? 'checked in' : 'checked out'}).`); return }
-    const late = d.late_minutes > 0 ? ` · <span class="text-danger">${d.late_minutes} min late</span>` : ''
-    const off = d.not_rostered ? ' · <span class="text-warning">not on today\'s roster</span>' : ''
-    show(d.punch_type === 'in' ? 'success' : 'secondary', `<b>${esc(d.name)}</b> — ${d.punch_type === 'in' ? 'checked IN' : 'checked OUT'} at ${time(d.at)}${late}${off}`)
+    if (!d.matched) { beep(false); show('err', 'bi-person-x', 'Face not recognised', esc(d.message)); return }
+    if (d.already === 'in') { beep(false); show('warn', 'bi-info-circle', `${esc(d.name)} — already checked in`, `Checked in at ${hhmm(d.since)}. To leave, tap <b>CHECK OUT</b>.`); return }
+    if (d.duplicate) { beep(true); show('warn', 'bi-check2', `${esc(d.name)} — already recorded`, `Your ${d.punch_type === 'in' ? 'check-in' : 'check-out'} was saved a moment ago.`); return }
+    beep(true)
+    if (d.punch_type === 'in') {
+      const late = d.late_minutes > 0 ? ` · <b style="color:var(--red)">${d.late_minutes} min late</b>` : ' · on time'
+      show('ok-in', 'bi-box-arrow-in-right', `Welcome, ${esc(d.name)}`, `Checked IN at <b>${hhmm(d.at)}</b>${d.shift ? ` · ${esc(d.shift)}` : ''}${late}${d.not_rostered ? ' · <b>not on today\'s roster</b>' : ''}`)
+    } else {
+      const ot = d.ot_minutes > 0 ? ` · <b style="color:var(--in)">overtime ${dur(d.ot_minutes)}</b>` : ''
+      const early = d.early_leave_minutes > 0 ? ` · left ${d.early_leave_minutes} min early` : ''
+      const worked = d.no_check_in ? ' · <b style="color:var(--amber)">no check-in found — the manager will check</b>' : ` · worked <b>${dur(d.worked_minutes)}</b>${ot}${early}`
+      show('ok-out', 'bi-box-arrow-right', `Goodbye, ${esc(d.name)}`, `Checked OUT at <b>${hhmm(d.at)}</b>${worked}`)
+    }
     loadToday()
   } catch (e) {
-    show('danger', 'Could not read the face — try again.')
+    beep(false); show('err', 'bi-exclamation-triangle', 'Could not read the face', 'Try again.')
   } finally {
-    btn.disabled = false
-    btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Check in / out'
-    setTimeout(() => { result.innerHTML = '' }, 8000)
+    cam.classList.remove('reading'); $('hint').textContent = 'Look here'
+    busy = false; $('btnIn').disabled = $('btnOut').disabled = false
   }
 }
+$('btnIn').onclick = () => punch('in')
+$('btnOut').onclick = () => punch('out')
 
 ;(async () => {
   showQ(); loadToday()
   try {
     await Face.load('{{ url_for("static", filename="models") }}')
-    await Face.start(document.getElementById('video'))
-    btn.disabled = false
-    btn.innerHTML = '<i class="bi bi-person-bounding-box me-2"></i>Check in / out'
+    await Face.start($('video'))
+    $('hint').textContent = 'Look here'
+    $('btnIn').disabled = $('btnOut').disabled = false
   } catch (e) {
-    btn.innerHTML = 'Camera not available'
-    show('danger', 'Allow the camera for this page, then reload.')
+    $('hint').textContent = 'Camera not available'
+    show('err', 'bi-camera-video-off', 'Camera not available', 'Allow the camera for this page, then reload.')
   }
   flushQ()
   setInterval(flushQ, 30000)
-  setInterval(loadToday, 60000)
+  setInterval(loadToday, 30000)
+  setInterval(render, 60000)
   window.addEventListener('online', flushQ)
 })()
 </script>
-{% endblock %}
+</body>
+</html>
